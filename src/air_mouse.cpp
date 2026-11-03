@@ -89,10 +89,12 @@ bool AirMouse::update(float dtSec, int8_t& dx, int8_t& dy) {
 
   if (_mode == Mode::Rate) {
     // ---- 空中飞鼠: 陀螺仪角速度
+    // 实测(平放握持): 左右倾斜 -> X 轴, 上下倾斜 -> Y 轴, Z 轴(偏航)能量最小。
+    // 因此水平默认用 X, 垂直用 Y; 另一档用 Z 做水平(适合竖直握持)。
     float gx = 0, gy = 0, gz = 0;
     if (!M5.Imu.getGyro(&gx, &gy, &gz)) return false;
-    h = gz - _biasZ;
-    v = (_axisMode == 0) ? (gy - _biasY) : (gx - _biasX);
+    h = (_axisMode == 0) ? (gx - _biasX) : (gz - _biasZ);
+    v = gy - _biasY;
     _lastH = h;
     _lastV = v;
     h = deadzone(h, kDeadzoneDps);

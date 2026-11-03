@@ -185,7 +185,7 @@ void drawUi() {
     snprintf(modeBuf, sizeof(modeBuf), "水平仪 %u", g_air.levelOrientation());
     modeText = modeBuf;
   } else {
-    modeText = g_air.axisMode() == 0 ? "飞鼠 Z/Y" : "飞鼠 Z/X";
+    modeText = g_air.axisMode() == 0 ? "飞鼠 X/Y" : "飞鼠 Z/Y";
   }
   snprintf(info, sizeof(info), "%s   %s   电量 %u%%",
            modeText, g_frozen ? "已冻结" : "跟随",

@@ -797,6 +797,13 @@ void HijelBLEMouse::ServerCallbacks::onConnect(NimBLEServer* pServer,
     );
 
     _parent->_log(HIDLogLevel::Normal, "Connected handle=%d", connInfo.getConnHandle());
+
+    // v0.0.2: 主动发起配对。
+    // 主机不会主动为 HID 设备发起配对, 而发送任务要求 _paired,
+    // 不配对就永远不发送报告 (表现为"连上但没反应")。
+    int rc = 0;
+    NimBLEDevice::startSecurity(connInfo.getConnHandle(), &rc);
+    _parent->_log(HIDLogLevel::Normal, "Requested pairing rc=%d", rc);
 }
 
 void HijelBLEMouse::ServerCallbacks::onDisconnect(NimBLEServer* pServer,

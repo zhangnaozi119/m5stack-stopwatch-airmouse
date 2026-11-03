@@ -21,6 +21,7 @@
 #include <cstring>
 
 #include "air_mouse.h"
+#include "version.h"
 
 namespace {
 
@@ -71,6 +72,9 @@ void drawStatic() {
   M5.Display.setFont(&fonts::efontCN_24);
   M5.Display.setTextColor(kAccent);
   M5.Display.drawString("M5 AirMouse", kScreen / 2, 90);
+  M5.Display.setFont(&fonts::efontCN_14);
+  M5.Display.setTextColor(kDim);
+  M5.Display.drawString("v" AIRMOUSE_VERSION, kScreen / 2, 124);
 }
 
 void drawUi() {
@@ -243,8 +247,8 @@ void setup() {
   cfg.serial_baudrate = 115200;
   M5.begin(cfg);
 
-  Serial.printf("[airmouse] reset_reason=%d\n",
-                static_cast<int>(esp_reset_reason()));
+  Serial.printf("[airmouse] M5AirMouse v%s reset_reason=%d\n",
+                AIRMOUSE_VERSION, static_cast<int>(esp_reset_reason()));
 
   M5.Display.setRotation(0);
   M5.Display.setBrightness(120);

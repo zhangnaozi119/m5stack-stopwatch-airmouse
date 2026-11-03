@@ -36,11 +36,17 @@ bool     g_frozen = false;
 uint32_t g_suppressUntil = 0;
 
 uint32_t g_lastImuUs = 0;
-uint32_t g_lastSendMs = 0;
+uint32_t g_lastImuMs = 0;   ///< 上次采样
+uint32_t g_lastSendMs = 0;  ///< 上次把累积位移交给库
 uint32_t g_lastUiMs = 0;
 uint32_t g_vibUntil = 0;
 uint8_t  g_lastBattery = 255;
-uint32_t g_sentCount = 0;  ///< 已发出的位移报告数 (屏幕自诊断用)
+uint32_t g_sentCount = 0;
+
+// 库的 move() 是覆盖语义, 高频调用会丢失中间位移。
+// 这里自己累积, 按固定节奏一次性提交。
+int32_t g_pendX = 0;
+int32_t g_pendY = 0;
 
 // ---------------------------------------------------------------- 绘制
 
@@ -279,7 +285,7 @@ void setup() {
 
   g_air.begin();
 
-  g_mouse.setUpdateRate(HIDRate::Hz125);
+  g_mouse.setUpdateRate(HIDRate::Hz50);
   g_mouse.setTxPower(3);
   g_mouse.setLogLevel(HIDLogLevel::Normal);  // 避免每条报告刷屏
   g_mouse.begin();
@@ -311,20 +317,39 @@ void loop() {
   if (g_lastImuUs == 0) g_lastImuUs = nowUs;
 
   if (g_air.calibrated() && g_mouse.isConnected() && !g_frozen) {
-    if (nowMs - g_lastSendMs >= 8) {
+    // 采样: 高频读取传感器, 保证不丢动作
+    if (nowMs - g_lastImuMs >= 8) {
       float dt = static_cast<float>(nowUs - g_lastImuUs) / 1000000.0f;
       if (dt > 0.05f) dt = 0.05f;
       g_lastImuUs = nowUs;
 
       int8_t dx = 0, dy = 0;
       if (g_air.update(dt, dx, dy)) {
-        g_mouse.move(dx, dy);
-        ++g_sentCount;
+        g_pendX += dx;
+        g_pendY += dy;
       }
+      g_lastImuMs = nowMs;
+    }
+
+    // 提交: 30ms 一次 (约 33Hz), 与 BLE 连接间隔匹配, 避免积压
+    if (nowMs - g_lastSendMs >= 30 && (g_pendX != 0 || g_pendY != 0)) {
+      int32_t sx = g_pendX;
+      int32_t sy = g_pendY;
+      if (sx > 127) sx = 127;
+      if (sx < -127) sx = -127;
+      if (sy > 127) sy = 127;
+      if (sy < -127) sy = -127;
+      g_mouse.move(static_cast<int16_t>(sx), static_cast<int16_t>(sy));
+      g_pendX -= sx;
+      g_pendY -= sy;
+      ++g_sentCount;
       g_lastSendMs = nowMs;
     }
   } else {
+    // 未连接 / 冻结 / 未校准: 保持时间基准, 避免恢复瞬间产生大位移
     g_lastImuUs = nowUs;
+    g_pendX = 0;
+    g_pendY = 0;
   }
 
   // 电量

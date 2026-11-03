@@ -281,7 +281,7 @@ void setup() {
 
   g_mouse.setUpdateRate(HIDRate::Hz125);
   g_mouse.setTxPower(3);
-  g_mouse.setLogLevel(HIDLogLevel::Verbose);
+  g_mouse.setLogLevel(HIDLogLevel::Normal);  // 避免每条报告刷屏
   g_mouse.begin();
   Serial.println("[airmouse] HID 已启动");
 
@@ -336,6 +336,21 @@ void loop() {
       g_lastBattery = static_cast<uint8_t>(lvl);
       g_mouse.setBatteryLevel(g_lastBattery);
     }
+  }
+
+  // 诊断: 每 500ms 打印一次传感器原始值与状态
+  static uint32_t lastDbg = 0;
+  if (nowMs - lastDbg >= 500) {
+    lastDbg = nowMs;
+    float ax = 0, ay = 0, az = 0, gx = 0, gy = 0, gz = 0;
+    const bool okA = M5.Imu.getAccel(&ax, &ay, &az);
+    const bool okG = M5.Imu.getGyro(&gx, &gy, &gz);
+    Serial.printf("[dbg] cal=%d conn=%d mode=%d okA=%d okG=%d "
+                  "A(%.2f,%.2f,%.2f) G(%.1f,%.1f,%.1f) sent=%lu\n",
+                  g_air.calibrated() ? 1 : 0, g_mouse.isConnected() ? 1 : 0,
+                  static_cast<int>(g_air.mode()), okA ? 1 : 0, okG ? 1 : 0,
+                  ax, ay, az, gx, gy, gz,
+                  static_cast<unsigned long>(g_sentCount));
   }
 
   // 界面 5fps

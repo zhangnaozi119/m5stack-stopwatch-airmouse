@@ -71,7 +71,7 @@ class AirMouse {
   uint8_t _axisMode = 0;
   uint8_t _levelRot = 1;       ///< 水平仪轴向旋转
   bool    _levelMirror = false;///< 水平仪水平镜像
-  bool    _invertX = true;
+  bool    _invertX = false;
 
   Mode  _mode = Mode::Rate;
   float _refRoll = 0, _refPitch = 0;

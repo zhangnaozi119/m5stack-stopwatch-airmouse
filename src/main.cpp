@@ -40,6 +40,7 @@ uint32_t g_lastSendMs = 0;
 uint32_t g_lastUiMs = 0;
 uint32_t g_vibUntil = 0;
 uint8_t  g_lastBattery = 255;
+uint32_t g_sentCount = 0;  ///< 已发出的位移报告数 (屏幕自诊断用)
 
 // ---------------------------------------------------------------- 绘制
 
@@ -62,6 +63,7 @@ void redrawText(LovyanGFX& d, const char* s, int16_t y, int16_t w, int16_t h,
 char     g_lastState[32] = {0};
 uint16_t g_lastStateColor = 0xFFFF;
 char     g_lastSub[48] = {0};
+char     g_lastDiag[48] = {0};
 char     g_lastFooter[64] = {0};
 int16_t  g_lastDotX = -1, g_lastDotY = -1;
 bool     g_lastCal = true;
@@ -102,6 +104,7 @@ void drawUi() {
     g_lastCal = true;
     g_lastState[0] = '\0';
     g_lastSub[0] = '\0';
+    g_lastDiag[0] = '\0';
   }
 
   // ---- 状态行
@@ -146,6 +149,25 @@ void drawUi() {
       d.fillCircle(px, py, 6, kAccent);
       g_lastDotX = px;
       g_lastDotY = py;
+    }
+  }
+
+  // ---- 自诊断: 报告是否真的发出去了 (拔线也能判断)
+  {
+    char diag[48];
+    const bool paired = g_mouse.isPaired();
+    if (conn) {
+      snprintf(diag, sizeof(diag), "%s   报告 %lu",
+               paired ? "已配对" : "直连",
+               static_cast<unsigned long>(g_sentCount));
+    } else {
+      diag[0] = '\0';
+    }
+    if (strcmp(diag, g_lastDiag) != 0) {
+      snprintf(g_lastDiag, sizeof(g_lastDiag), "%s", diag);
+      // 有报告发出 = 绿; 连上但零报告 = 橙; 未连接 = 不显示
+      const uint16_t c = !conn ? kDim : (g_sentCount > 0 ? 0x07E0 : 0xFD20);
+      redrawText(d, diag, 362, 300, 22, c, &fonts::efontCN_14);
     }
   }
 
@@ -297,6 +319,7 @@ void loop() {
       int8_t dx = 0, dy = 0;
       if (g_air.update(dt, dx, dy)) {
         g_mouse.move(dx, dy);
+        ++g_sentCount;
       }
       g_lastSendMs = nowMs;
     }

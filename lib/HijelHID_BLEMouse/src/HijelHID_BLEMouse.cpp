@@ -105,9 +105,28 @@ void HijelBLEMouse::begin() {
     // Single input report characteristic for all modes.
     // hscroll mode uses one collection with Report ID 1;
     // standard mode uses one collection with no Report ID (pass 0).
-    _pInputReport = _pHIDDevice->getInputReport(_horizontalScroll ? MOUSE_REPORT_ID_MOUSE : 0);
+    // v0.0.4: 自建特征, 不带 READ_ENC —— 主机无需配对即可订阅。
+    if (_horizontalScroll) {
+        _pInputReport = _pHIDDevice->getInputReport(MOUSE_REPORT_ID_MOUSE);
+    } else {
+        _pInputReport = _pHIDDevice->getHidService()->createCharacteristic(
+            NimBLEUUID(static_cast<uint16_t>(0x2A4D)),
+            NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+        if (_pInputReport) {
+            NimBLEDescriptor* dsc = _pInputReport->createDescriptor(
+                NimBLEUUID(static_cast<uint16_t>(0x2908)), NIMBLE_PROPERTY::READ);
+            const uint8_t refVal[2] = {0x00, 0x01};  // report id 0, input
+            if (dsc) dsc->setValue(refVal, sizeof(refVal));
+        }
+    }
     _pHIDDevice->setBatteryLevel(_batteryLevel);
     _pHIDDevice->startServices();
+
+    // v0.0.4: NimBLE 2.5.1 里 startServices() 是空函数。
+    // 不显式启动 GATT server, 主机连接后发现不了服务, 会以 HCI 0x13 主动断开。
+    if (!_pServer->start()) {
+        _log(HIDLogLevel::Normal, "GATT server start FAILED");
+    }
 
     // Advertising
     // setName() puts the device name in the scan response packet so Hosts
@@ -511,7 +530,8 @@ void HijelBLEMouse::_sendTask() {
 
         if (_stopSendTask) break;
 
-        if (!_paired) continue;
+        // v0.0.4: 未配对也发送 (特征已不需要加密)
+        if (!_connected) continue;
 
         _drainAccumulators();
         _sendReport();
@@ -820,8 +840,9 @@ void HijelBLEMouse::ServerCallbacks::onDisconnect(NimBLEServer* pServer,
 
 void HijelBLEMouse::ServerCallbacks::onAuthenticationComplete(NimBLEConnInfo& connInfo) {
     if (!connInfo.isEncrypted()) {
-        _parent->_log(HIDLogLevel::Normal, "Auth failed — disconnecting");
-        NimBLEDevice::getServer()->disconnect(connInfo.getConnHandle());
+        // v0.0.4: 未加密也继续工作 (特征已不要求加密)
+        _parent->_log(HIDLogLevel::Normal, "Auth incomplete — continue unencrypted");
+        _parent->_connState = HijelBLEMouse::ConnState::Active;
         return;
     }
 

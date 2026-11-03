@@ -1,5 +1,20 @@
+# PlatformIO
 .pio/
+.pioenvs/
+.piolibdeps/
+
+# Build artifacts
 *.bin
 *.elf
 *.map
+build/
+
+# Logs / captures
 pair_log*.txt
+*.log
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store

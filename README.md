@@ -59,7 +59,7 @@ as a standard Bluetooth mouse.
 Requires [PlatformIO](https://platformio.org/).
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/zhangnaozi119/m5stack-stopwatch-airmouse.git
 cd m5stack-stopwatch-airmouse
 pio run                 # build
 pio run -t upload       # flash (auto-detects the port)

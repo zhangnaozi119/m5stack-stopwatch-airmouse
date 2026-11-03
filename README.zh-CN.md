@@ -56,7 +56,7 @@
 需要 [PlatformIO](https://platformio.org/)。
 
 ```bash
-git clone <本项目地址>
+git clone https://github.com/zhangnaozi119/m5stack-stopwatch-airmouse.git
 cd m5stack-stopwatch-airmouse
 pio run                 # 编译
 pio run -t upload       # 烧录（自动识别端口）

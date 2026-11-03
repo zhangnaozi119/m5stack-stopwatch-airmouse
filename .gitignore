@@ -1,0 +1,5 @@
+.pio/
+*.bin
+*.elf
+*.map
+pair_log*.txt

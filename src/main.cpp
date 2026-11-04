@@ -3,15 +3,15 @@
  * @brief M5AirMouse —— 陀螺仪空中鼠标
  *
  * 两种模式:
- *   空中飞鼠 (陀螺仪角速度 -> 指针速度)
- *   水平仪飞鼠 (加速度计倾角 -> 指针速度, 可 8 向校准)
+ *   空中鼠 (陀螺仪角速度 -> 指针速度)
+ *   水平鼠 (加速度计倾角 -> 指针速度, 可 8 向校准)
  *
  * 按键
  *   A 短按   左键单击        A 双击   左键双击 (打开)
  *   A 长按   按住左键拖拽
  *   B 短按   右键单击        B 双击   冻结/解冻
- *   B 长按   空中飞鼠: 切轴向   水平仪飞鼠: 切 8 种轴向组合
- *   A+B 长按 切换 空中飞鼠 / 水平仪飞鼠
+ *   B 长按   空中鼠: 切轴向   水平鼠: 切 8 种轴向组合
+ *   A+B 长按 切换 空中鼠 / 水平鼠
  */
 #include <M5Unified.h>
 #include <HijelHID_BLEMouse.h>
@@ -182,10 +182,10 @@ void drawUi() {
   char modeBuf[24];
   const char* modeText;
   if (g_air.mode() == sw::AirMouse::Mode::Level) {
-    snprintf(modeBuf, sizeof(modeBuf), "水平仪飞鼠 %u", g_air.levelOrientation());
+    snprintf(modeBuf, sizeof(modeBuf), "水平鼠 %u", g_air.levelOrientation());
     modeText = modeBuf;
   } else {
-    modeText = g_air.axisMode() == 0 ? "空中飞鼠 X/Y" : "空中飞鼠 Z/Y";
+    modeText = g_air.axisMode() == 0 ? "空中鼠 X/Y" : "空中鼠 Z/Y";
   }
   snprintf(info, sizeof(info), "%s   %s   电量 %u%%",
            modeText, g_frozen ? "已冻结" : "跟随",

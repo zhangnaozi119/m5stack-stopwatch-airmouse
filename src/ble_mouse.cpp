@@ -9,12 +9,13 @@
 namespace sw {
 namespace {
 
-// 5 键鼠标 + 相对位移 + 滚轮 + AC Pan（水平滚动）
-// 报告：5 字节 [buttons, dx, dy, wheel, pan]，无 Report ID
+// 5 键鼠标 + 相对位移 + 滚轮 + AC Pan（Report ID 1, 6 字节含 ID）
+// 媒体键 Consumer 报告（Report ID 2, 3 字节含 ID）
 const uint8_t kReportMap[] = {
     0x05, 0x01,        // Usage Page (Generic Desktop)
     0x09, 0x02,        // Usage (Mouse)
     0xA1, 0x01,        // Collection (Application)
+    0x85, 0x01,        //   Report ID (1)
     0x09, 0x01,        //   Usage (Pointer)
     0xA1, 0x00,        //   Collection (Physical)
     0x05, 0x09,        //     Usage Page (Button)
@@ -48,7 +49,31 @@ const uint8_t kReportMap[] = {
     0x81, 0x06,        //     Input (Data,Var,Rel)
     0xC0,              //   End Collection
     0xC0,              // End Collection
+
+    // ---- Consumer 媒体键 (Report ID 2)
+    0x05, 0x0C,        // Usage Page (Consumer)
+    0x09, 0x01,        // Usage (Consumer Control)
+    0xA1, 0x01,        // Collection (Application)
+    0x85, 0x02,        //   Report ID (2)
+    0x19, 0x00,        //   Usage Minimum (0)
+    0x2A, 0x3C, 0x02,  //   Usage Maximum (0x23C)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x26, 0x3C, 0x02,  //   Logical Maximum (0x23C)
+    0x95, 0x01,        //   Report Count (1)
+    0x75, 0x10,        //   Report Size (16)
+    0x81, 0x00,        //   Input (Data,Array,Abs)
+    0xC0,              // End Collection
 };
+
+// 常用 Consumer 键值 (HID Consumer Page)
+constexpr uint16_t kConsVolUp      = 0x00E9;
+constexpr uint16_t kConsVolDown    = 0x00EA;
+constexpr uint16_t kConsVolMute    = 0x00E2;
+constexpr uint16_t kConsPlayPause  = 0x00CD;
+constexpr uint16_t kConsNext       = 0x00B5;
+constexpr uint16_t kConsPrev       = 0x00B6;
+constexpr uint16_t kConsBrightUp   = 0x006F;
+constexpr uint16_t kConsBrightDown = 0x0070;
 
 class ServerCB : public NimBLEServerCallbacks {
  public:
@@ -121,14 +146,35 @@ bool BleMouse::begin(const char* deviceName) {
   _hid->setHidInfo(0x00, 0x01);
   _hid->setReportMap(const_cast<uint8_t*>(kReportMap), sizeof(kReportMap));
 
-  // 试验：改用 NimBLE 自带的 getInputReport
-  _input = _hid->getInputReport(0);
+  // 自建 Input Report 特征：只要 READ | NOTIFY，不带 READ_ENC，
+  // 这样主机未完成配对也能订阅。
+  _input = _hid->getHidService()->createCharacteristic(
+      NimBLEUUID(static_cast<uint16_t>(0x2A4D)),
+      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
   if (_input == nullptr) {
     Serial.println("[ble] Input Report 特征创建失败");
     return false;
   }
 
-  const uint8_t idle[5] = {0, 0, 0, 0, 0};
+  NimBLEDescriptor* ref = _input->createDescriptor(
+      NimBLEUUID(static_cast<uint16_t>(0x2908)), NIMBLE_PROPERTY::READ);
+  const uint8_t refVal[2] = {0x01, 0x01};  // report id 1, type input
+  if (ref != nullptr) ref->setValue(refVal, sizeof(refVal));
+
+  // 媒体报告特征 (Report ID 2)
+  _media = _hid->getHidService()->createCharacteristic(
+      NimBLEUUID(static_cast<uint16_t>(0x2A4D)),
+      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+  if (_media != nullptr) {
+    NimBLEDescriptor* mref = _media->createDescriptor(
+        NimBLEUUID(static_cast<uint16_t>(0x2908)), NIMBLE_PROPERTY::READ);
+    const uint8_t mrefVal[2] = {0x02, 0x01};
+    if (mref != nullptr) mref->setValue(mrefVal, sizeof(mrefVal));
+    const uint8_t midle[3] = {0x02, 0x00, 0x00};
+    _media->setValue(midle, sizeof(midle));
+  }
+
+  const uint8_t idle[6] = {0x01, 0, 0, 0, 0, 0};
   _input->setValue(idle, sizeof(idle));
 
   _hid->setBatteryLevel(_battery);
@@ -171,7 +217,8 @@ void BleMouse::startAdvertising() {
 bool BleMouse::sendReport(int8_t dx, int8_t dy, int8_t wheel, int8_t pan) {
   if (!_connected || _input == nullptr) return false;
 
-  const uint8_t report[5] = {
+  const uint8_t report[6] = {
+      0x01,  // Report ID
       _buttons,
       static_cast<uint8_t>(dx),
       static_cast<uint8_t>(dy),
@@ -179,6 +226,18 @@ bool BleMouse::sendReport(int8_t dx, int8_t dy, int8_t wheel, int8_t pan) {
       static_cast<uint8_t>(pan),
   };
   return _input->notify(report, sizeof(report));
+}
+
+bool BleMouse::sendConsumer(uint16_t code) {
+  if (!_connected || _media == nullptr) return false;
+  const uint8_t report[3] = {0x02,
+                             static_cast<uint8_t>(code & 0xFF),
+                             static_cast<uint8_t>(code >> 8)};
+  _media->notify(report, sizeof(report));
+  // 按键立即释放
+  const uint8_t release[3] = {0x02, 0x00, 0x00};
+  _media->notify(release, sizeof(release));
+  return true;
 }
 
 bool BleMouse::move(int8_t dx, int8_t dy, int8_t wheel, int8_t pan) {

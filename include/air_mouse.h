@@ -38,6 +38,19 @@ class AirMouse {
   void  setGain(float gain) { _gain = gain; }
   float gain() const { return _gain; }
 
+  /// 动态加速: 角速度越快, 每度移动越多像素。
+  /// 慢速精调 (gain 8) / 日常 (22) / 快甩跨屏 (40), 三段线性插值。
+  float dynamicGain(float absDps) const {
+    const float slow = 8.0f, fast = 40.0f;
+    if (absDps < 30.0f) {
+      return slow + (_gain - slow) * (absDps / 30.0f);
+    }
+    if (absDps < 150.0f) {
+      return _gain + (fast - _gain) * ((absDps - 30.0f) / 120.0f);
+    }
+    return fast;
+  }
+
   /// 轴向 (仅飞鼠模式): 0 = 水平 Z / 垂直 Y; 1 = 水平 Z / 垂直 X
   void    setAxisMode(uint8_t mode) { _axisMode = mode & 1; }
   uint8_t axisMode() const { return _axisMode; }

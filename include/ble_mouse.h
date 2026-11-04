@@ -43,6 +43,9 @@ class BleMouse {
   /// 发送一次相对位移（带上当前按键状态）
   bool move(int8_t dx, int8_t dy, int8_t wheel = 0, int8_t pan = 0);
 
+  /// 发送一个 Consumer 键（音量/播放/亮度等），自动带按下+释放
+  bool sendConsumer(uint16_t code);
+
   /// 直接设置按键并立即上报
   void setButtons(uint8_t mask);
 
@@ -71,6 +74,7 @@ class BleMouse {
   NimBLEServer*         _server = nullptr;
   NimBLEHIDDevice*      _hid = nullptr;
   NimBLECharacteristic* _input = nullptr;
+  NimBLECharacteristic* _media = nullptr;
   const char*           _name = nullptr;
 
   volatile bool _connected = false;

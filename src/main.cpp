@@ -35,6 +35,10 @@ enum class AppMode : uint8_t { Air = 0, Level };
 sw::BleMouse g_mouse;
 sw::AirMouse  g_air;
 sw::Touchpad  g_touchpad;
+
+// 滚动惯性: 快滑/快滚后按衰减继续滚, Mac 触控板手感
+float    g_scrollVel = 0;      ///< 最近滚动速度
+uint32_t g_lastScrollMs = 0;
 bool          g_touchActive = false;  ///< 拇指正按在屏幕上
 AppMode       g_appMode = AppMode::Air;
 
@@ -304,8 +308,21 @@ void handleButtons() {
     }
     return;
   }
-  bothSince = 0;
-  chordFired = false;
+  if (bothSince != 0 && !chordFired) {
+    // A+B 同时按住后松开且未触发模式切换 = 中键
+    const uint32_t held = millis() - bothSince;
+    bothSince = 0;
+    chordFired = false;
+    if (held >= 50 && held < 600 && millis() >= g_suppressUntil) {
+      g_mouse.click(sw::kBtnMiddle);
+      M5.Power.setVibration(120);
+      g_vibUntil = millis() + 80;
+    }
+    if (millis() < g_suppressUntil) return;
+  } else {
+    bothSince = 0;
+    chordFired = false;
+  }
   if (millis() < g_suppressUntil) return;
 
   // A
@@ -395,17 +412,63 @@ void loop() {
 
   // ---- 触控板手势: 两种模式下都可用（滚动 + 快滑后退/前进）
   // 拇指按住屏幕期间暂停 IMU 指针，避免滚动的同时指针乱飞。
+  // B 键按住 + 拇指上下滑 = 音量调节 (媒体层)
+  const bool mediaMode = M5.BtnB.isPressed();
   sw::TouchOutput to;
   g_touchpad.update(nowMs, to);
   g_touchActive = g_touchpad.active();
 
-  if (to.wheel != 0 || to.pan != 0) {
-    g_mouse.move(0, 0, to.wheel, to.pan);
-    ++g_sentCount;
+  if (mediaMode) {
+    // 媒体模式: 滚动转音量, 轻点转播放/暂停
+    if (to.wheel != 0) {
+      // 连续调节: 每 2 格一档, 音量键是增量式的
+      const int steps = (to.wheel > 0) ? to.wheel : -to.wheel;
+      for (int i = 0; i < steps; i += 2) {
+        g_mouse.sendConsumer(to.wheel > 0 ? 0x00E9 : 0x00EA);  // Vol+ / Vol-
+      }
+      ++g_sentCount;
+    }
+    if (to.leftClick) {
+      g_mouse.sendConsumer(0x00CD);  // Play/Pause
+      M5.Power.setVibration(150);
+      g_vibUntil = nowMs + 100;
+    }
+  } else {
+    // 滚动 + 惯性
+    if (to.wheel != 0) {
+      g_mouse.move(0, 0, to.wheel, to.pan);
+      ++g_sentCount;
+      // 记录滚动速度 (格/秒), 供惯性使用
+      const uint32_t dt = nowMs - g_lastScrollMs;
+      if (dt > 0 && dt < 200) {
+        g_scrollVel = g_scrollVel * 0.5f + (to.wheel * 1000.0f / dt) * 0.5f;
+      }
+      g_lastScrollMs = nowMs;
+    } else if (to.pan != 0) {
+      g_mouse.move(0, 0, to.wheel, to.pan);
+      ++g_sentCount;
+    } else {
+      // 无手指输入时推进惯性
+      if (std::fabs(g_scrollVel) > 2.0f && nowMs - g_lastScrollMs >= 30) {
+        const int8_t coast = static_cast<int8_t>(
+            g_scrollVel * 0.03f > 0 ? std::ceil(g_scrollVel * 0.03f)
+                                    : std::floor(g_scrollVel * 0.03f));
+        if (coast != 0) {
+          g_mouse.move(0, 0, coast, 0);
+          ++g_sentCount;
+          g_scrollVel *= 0.92f;   // 每帧衰减 8%
+          g_lastScrollMs = nowMs;
+        } else {
+          g_scrollVel = 0;
+        }
+      } else if (nowMs - g_lastScrollMs > 300) {
+        g_scrollVel = 0;  // 停顿 300ms 后取消惯性
+      }
+    }
+    if (to.leftClick)  { g_mouse.click(sw::kBtnLeft); g_scrollVel = 0; }
+    if (to.back)       { g_mouse.click(sw::kBtnBack); g_scrollVel = 0; }
+    if (to.forward)    { g_mouse.click(sw::kBtnForward); g_scrollVel = 0; }
   }
-  if (to.leftClick)  g_mouse.click(sw::kBtnLeft);
-  if (to.back)       g_mouse.click(sw::kBtnBack);
-  if (to.forward)    g_mouse.click(sw::kBtnForward);
 
   if (g_air.calibrated() && g_mouse.isConnected() && !g_frozen && !g_touchActive) {
     // 采样: 高频读取传感器, 保证不丢动作

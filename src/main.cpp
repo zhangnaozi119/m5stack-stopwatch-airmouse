@@ -171,9 +171,31 @@ void drawUi() {
     }
     if (strcmp(diag, g_lastDiag) != 0) {
       snprintf(g_lastDiag, sizeof(g_lastDiag), "%s", diag);
-      // 有报告发出 = 绿; 连上但零报告 = 橙; 未连接 = 不显示
       const uint16_t c = !conn ? kDim : (g_sentCount > 0 ? 0x07E0 : 0xFD20);
       redrawText(d, diag, 362, 300, 22, c, &fonts::efontCN_14);
+    }
+  }
+
+  // ---- 陀螺仪峰值 (3 秒滚动窗口), 用于确认动作是否产生旋转
+  if (conn) {
+    static float pkX = 0, pkY = 0, pkZ = 0;
+    static uint32_t pkStart = 0;
+    float gx = 0, gy = 0, gz = 0;
+    g_air.lastGyro(gx, gy, gz);
+    if (std::fabs(gx) > pkX) pkX = std::fabs(gx);
+    if (std::fabs(gy) > pkY) pkY = std::fabs(gy);
+    if (std::fabs(gz) > pkZ) pkZ = std::fabs(gz);
+    const uint32_t now = millis();
+    if (now - pkStart >= 3000) {
+      pkStart = now;
+      pkX = pkY = pkZ = 0;
+    }
+    char pk[40];
+    snprintf(pk, sizeof(pk), "峰值 X%3.0f Y%3.0f Z%3.0f", pkX, pkY, pkZ);
+    static char lastPk[40] = {0};
+    if (strcmp(pk, lastPk) != 0) {
+      snprintf(lastPk, sizeof(lastPk), "%s", pk);
+      redrawText(d, pk, 376, 300, 20, kDim, &fonts::efontCN_12);
     }
   }
 
@@ -363,20 +385,34 @@ void loop() {
     }
   }
 
-  // 诊断: 每 500ms 打印一次传感器原始值与状态
-  static uint32_t lastDbg = 0;
-  if (nowMs - lastDbg >= 500) {
-    lastDbg = nowMs;
+  // 诊断: 有动作时立即打印; 静止时每 5 秒一次心跳
+  {
+    static uint32_t lastDbg = 0;
+    static float peakH = 0, peakV = 0, peakG = 0;
     float ax = 0, ay = 0, az = 0, gx = 0, gy = 0, gz = 0;
     const bool okA = M5.Imu.getAccel(&ax, &ay, &az);
     const bool okG = M5.Imu.getGyro(&gx, &gy, &gz);
-    Serial.printf("[dbg] cal=%d conn=%d mode=%d okA=%d okG=%d "
-                  "A(%.2f,%.2f,%.2f) G(%.1f,%.1f,%.1f) HV(%.1f,%.1f) sent=%lu\n",
-                  g_air.calibrated() ? 1 : 0, g_mouse.isConnected() ? 1 : 0,
-                  static_cast<int>(g_air.mode()), okA ? 1 : 0, okG ? 1 : 0,
-                  ax, ay, az, gx, gy, gz,
-                  g_air.lastHorizontalDps(), g_air.lastVerticalDps(),
-                  static_cast<unsigned long>(g_sentCount));
+    const float mag = std::fabs(gx) + std::fabs(gy) + std::fabs(gz);
+    if (mag > peakG) peakG = mag;
+    const float h = std::fabs(g_air.lastHorizontalDps());
+    const float v = std::fabs(g_air.lastVerticalDps());
+    if (h > peakH) peakH = h;
+    if (v > peakV) peakV = v;
+
+    const bool active = mag > 15.0f;
+    if (active || nowMs - lastDbg >= 5000) {
+      lastDbg = nowMs;
+      Serial.printf("[dbg] cal=%d conn=%d mode=%d okA=%d okG=%d "
+                    "A(%.2f,%.2f,%.2f) G(%.1f,%.1f,%.1f) HV(%.1f,%.1f) "
+                    "peakG=%.1f peakHV=%.1f/%.1f sent=%lu\n",
+                    g_air.calibrated() ? 1 : 0, g_mouse.isConnected() ? 1 : 0,
+                    static_cast<int>(g_air.mode()), okA ? 1 : 0, okG ? 1 : 0,
+                    ax, ay, az, gx, gy, gz,
+                    g_air.lastHorizontalDps(), g_air.lastVerticalDps(),
+                    peakG, peakH, peakV,
+                    static_cast<unsigned long>(g_sentCount));
+      if (!active) { peakG = 0; peakH = 0; peakV = 0; }
+    }
   }
 
   // 界面 5fps

@@ -91,6 +91,9 @@ bool AirMouse::update(float dtSec, int8_t& dx, int8_t& dy) {
     // ---- 空中鼠: 陀螺仪角速度
     float gx = 0, gy = 0, gz = 0;
     if (!M5.Imu.getGyro(&gx, &gy, &gz)) return false;
+    _gxRaw = gx;
+    _gyRaw = gy;
+    _gzRaw = gz;
 
     if (_axisMode == 0) {
       // 世界坐标投影: 用加速度计估计重力方向, 把角速度分解为

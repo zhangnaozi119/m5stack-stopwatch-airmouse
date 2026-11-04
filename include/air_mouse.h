@@ -59,6 +59,9 @@ class AirMouse {
   float lastHorizontalDps() const { return _lastH; }
   float lastVerticalDps() const { return _lastV; }
 
+  /// 最近一次读取的原始角速度 (诊断用)
+  void lastGyro(float& x, float& y, float& z) const { x = _gxRaw; y = _gyRaw; z = _gzRaw; }
+
  private:
   bool     _calibrated = false;
   uint16_t _calSamples = 0;
@@ -83,6 +86,7 @@ class AirMouse {
   float _lpX = 0, _lpY = 0;
   float _accumX = 0, _accumY = 0;
   float _lastH = 0, _lastV = 0;
+  float _gxRaw = 0, _gyRaw = 0, _gzRaw = 0;
 
   static constexpr float kDeadzoneDps = 0.8f;   ///< 飞鼠死区
   static constexpr float kDeadzoneDeg = 1.5f;   ///< 水平仪死区

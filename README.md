@@ -84,7 +84,7 @@ pio run -t upload --upload-port COM4
 
 1. Power on and **hold the device still for ~1 second** — the screen shows a
    calibration bar while it measures the gyro bias.
-2. On your computer: **Bluetooth → Add device → M5 AirMouse 3**.
+2. On your computer: **Bluetooth → Add device → M5 AirMouse**.
 3. Once paired, the screen shows `已连接` (connected).
 
 ### Controls

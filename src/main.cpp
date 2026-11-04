@@ -29,12 +29,13 @@ namespace {
 constexpr const char* kDeviceName = "M5 AirMouse";
 constexpr int16_t kScreen = 466;
 
-/// 三种工作模式
-enum class AppMode : uint8_t { Air = 0, Level, Touch };
+/// 两种工作模式（触控板手势已并入两者）
+enum class AppMode : uint8_t { Air = 0, Level };
 
 sw::BleMouse g_mouse;
 sw::AirMouse  g_air;
 sw::Touchpad  g_touchpad;
+bool          g_touchActive = false;  ///< 拇指正按在屏幕上
 AppMode       g_appMode = AppMode::Air;
 
 bool     g_holdLeft = false;
@@ -133,8 +134,8 @@ void drawUi() {
   char sub[48];
   if (!conn) {
     snprintf(sub, sizeof(sub), "在电脑蓝牙里选择 %s", kDeviceName);
-  } else if (g_appMode == AppMode::Touch) {
-    snprintf(sub, sizeof(sub), "%s", g_touchpad.hint()[0] ? g_touchpad.hint() : "滑动=滚动  快滑左右=后退/前进");
+  } else if (g_touchActive && g_touchpad.hint()[0]) {
+    snprintf(sub, sizeof(sub), "%s", g_touchpad.hint());
   } else {
     snprintf(sub, sizeof(sub), "H %+5.1f  V %+5.1f  %s",
              g_air.lastHorizontalDps(), g_air.lastVerticalDps(),
@@ -146,7 +147,7 @@ void drawUi() {
   }
 
   // ---- 方向指示 / 触控点
-  if (conn && g_appMode == AppMode::Touch) {
+  if (conn && g_touchActive) {
     // 触控板: 底部画一个小的"触控镜"，圆点位置按比例映射手指位置。
     // 直接在屏幕上按手指坐标画点会和手指重叠，缩小到中央更直观。
     constexpr int16_t padCx = kScreen / 2, padCy = 300, padR = 44;
@@ -217,7 +218,7 @@ void drawUi() {
   }
 
   // ---- 陀螺仪峰值 (3 秒滚动窗口), 用于确认动作是否产生旋转
-  if (conn && g_appMode != AppMode::Touch) {
+  if (conn && !g_touchActive) {
     static float pkX = 0, pkY = 0, pkZ = 0;
     static uint32_t pkStart = 0;
     float gx = 0, gy = 0, gz = 0;
@@ -248,9 +249,6 @@ void drawUi() {
       snprintf(modeBuf, sizeof(modeBuf), "水平鼠 %u", g_air.levelOrientation());
       modeText = modeBuf;
       break;
-    case AppMode::Touch:
-      modeText = "触控板";
-      break;
     default:
       modeText = g_air.axisMode() == 0 ? "空中鼠 竖Y" : "空中鼠 竖X";
       break;
@@ -267,22 +265,14 @@ void drawUi() {
 // ---------------------------------------------------------------- 模式
 
 void toggleMode() {
-  switch (g_appMode) {
-    case AppMode::Air:
-      g_appMode = AppMode::Level;
-      g_air.setMode(sw::AirMouse::Mode::Level);
-      M5.Speaker.tone(1500, 80, 0, true);
-      break;
-    case AppMode::Level:
-      g_appMode = AppMode::Touch;
-      g_touchpad.begin();
-      M5.Speaker.tone(2000, 80, 0, true);
-      break;
-    case AppMode::Touch:
-      g_appMode = AppMode::Air;
-      g_air.setMode(sw::AirMouse::Mode::Rate);
-      M5.Speaker.tone(1000, 80, 0, true);
-      break;
+  if (g_appMode == AppMode::Air) {
+    g_appMode = AppMode::Level;
+    g_air.setMode(sw::AirMouse::Mode::Level);
+    M5.Speaker.tone(1500, 80, 0, true);
+  } else {
+    g_appMode = AppMode::Air;
+    g_air.setMode(sw::AirMouse::Mode::Rate);
+    M5.Speaker.tone(1000, 80, 0, true);
   }
   g_frozen = false;
   g_pendX = g_pendY = 0;
@@ -403,23 +393,21 @@ void loop() {
   const uint32_t nowMs = millis();
   if (g_lastImuUs == 0) g_lastImuUs = nowUs;
 
-  if (g_appMode == AppMode::Touch) {
-    // ---- 触控板：滚动 + 轻点 + 快滑
-    g_lastImuUs = nowUs;
-    g_pendX = g_pendY = 0;
-    if (g_mouse.isConnected() && !g_frozen) {
-      sw::TouchOutput to;
-      g_touchpad.update(nowMs, to);
-      if (to.wheel != 0 || to.pan != 0) {
-        g_mouse.move(0, 0, to.wheel, to.pan);
-        ++g_sentCount;
-      }
-      if (to.leftClick)    g_mouse.click(sw::kBtnLeft);
-      if (to.rightClick)   g_mouse.click(sw::kBtnRight);
-      if (to.back)         g_mouse.click(sw::kBtnBack);
-      if (to.forward)      g_mouse.click(sw::kBtnForward);
-    }
-  } else if (g_air.calibrated() && g_mouse.isConnected() && !g_frozen) {
+  // ---- 触控板手势: 两种模式下都可用（滚动 + 快滑后退/前进）
+  // 拇指按住屏幕期间暂停 IMU 指针，避免滚动的同时指针乱飞。
+  sw::TouchOutput to;
+  g_touchpad.update(nowMs, to);
+  g_touchActive = g_touchpad.active();
+
+  if (to.wheel != 0 || to.pan != 0) {
+    g_mouse.move(0, 0, to.wheel, to.pan);
+    ++g_sentCount;
+  }
+  if (to.leftClick)  g_mouse.click(sw::kBtnLeft);
+  if (to.back)       g_mouse.click(sw::kBtnBack);
+  if (to.forward)    g_mouse.click(sw::kBtnForward);
+
+  if (g_air.calibrated() && g_mouse.isConnected() && !g_frozen && !g_touchActive) {
     // 采样: 高频读取传感器, 保证不丢动作
     if (nowMs - g_lastImuMs >= 8) {
       float dt = static_cast<float>(nowUs - g_lastImuUs) / 1000000.0f;
@@ -449,7 +437,8 @@ void loop() {
       g_lastSendMs = nowMs;
     }
   } else {
-    // 未连接 / 冻结 / 未校准: 保持时间基准, 避免恢复瞬间产生大位移
+    // 未连接 / 冻结 / 未校准 / 拇指按住屏幕: 保持时间基准,
+    // 避免恢复瞬间产生大位移
     g_lastImuUs = nowUs;
     g_pendX = 0;
     g_pendY = 0;

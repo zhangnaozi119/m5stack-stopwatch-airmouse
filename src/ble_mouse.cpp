@@ -5,6 +5,7 @@
 #include "ble_mouse.h"
 
 #include <Arduino.h>
+#include <Preferences.h>
 
 namespace sw {
 namespace {
@@ -81,13 +82,17 @@ class ServerCB : public NimBLEServerCallbacks {
 
   void onConnect(NimBLEServer* server, NimBLEConnInfo& connInfo) override {
     _owner->onConnected();
-    // 先协商连接间隔（7.5~15ms），再发起配对。
-    // 顺序与已验证的库实现一致：过早请求配对时部分主机会直接断开。
     server->updateConnParams(connInfo.getConnHandle(), 6, 12, 0, 400);
-    int rc = 0;
-    NimBLEDevice::startSecurity(connInfo.getConnHandle(), &rc);
-    Serial.printf("[ble] 已连接 handle=%u interval=%u paired_req_rc=%d\n",
-                  connInfo.getConnHandle(), connInfo.getConnInterval(), rc);
+    if (_owner->_expectPairing) {
+      // 首次配对: 主动发起。已配对主机重连时会自己恢复加密。
+      int rc = 0;
+      NimBLEDevice::startSecurity(connInfo.getConnHandle(), &rc);
+      Serial.printf("[ble] 已连接 handle=%u interval=%u 配对请求rc=%d\n",
+                    connInfo.getConnHandle(), connInfo.getConnInterval(), rc);
+    } else {
+      Serial.printf("[ble] 已连接(已配对) handle=%u interval=%u\n",
+                    connInfo.getConnHandle(), connInfo.getConnInterval());
+    }
   }
 
   void onDisconnect(NimBLEServer* /*server*/, NimBLEConnInfo& connInfo, int reason) override {
@@ -119,17 +124,27 @@ class ServerCB : public NimBLEServerCallbacks {
 
 }  // namespace
 
-bool BleMouse::begin(const char* deviceName) {
+bool BleMouse::begin(const char* deviceName, bool forceRepairing) {
   _name = deviceName;
 
   NimBLEDevice::init(deviceName);
 
-  // 每次开机清空绑定：主机按 MAC 记住配对密钥，设备侧密钥一旦与之不一致，
-  // 主机会用旧密钥加密 -> 失败 -> 主动断开 (HCI 0x13)。
-  // 清空后由 onConnect 里的 startSecurity 重新配对。
-  if (NimBLEDevice::getNumBonds() > 0) {
-    NimBLEDevice::deleteAllBonds();
-    Serial.println("[ble] 已清空旧绑定");
+  // 绑定策略（单主机槽位）：
+  //   - NVS 有 paired 标记 -> 保留绑定，开机静默等待主机重连（加密自动恢复）
+  //   - 无标记或用户请求清配对 -> 清空绑定，onConnect 里主动 startSecurity
+  Preferences prefs;
+  prefs.begin("pairing", true);
+  const bool bondedBefore = prefs.getBool("paired", false);
+  prefs.end();
+  if (forceRepairing || !bondedBefore) {
+    if (NimBLEDevice::getNumBonds() > 0) {
+      NimBLEDevice::deleteAllBonds();
+      Serial.println("[ble] 已清空旧绑定");
+    }
+    _expectPairing = true;
+  } else {
+    _expectPairing = false;
+    Serial.println("[ble] 已有配对记录，等待主机重连");
   }
 
   NimBLEDevice::setPower(ESP_PWR_LVL_P3);
@@ -311,6 +326,25 @@ void BleMouse::onDisconnected() {
 
 void BleMouse::onAuthenticated(bool encrypted) {
   _paired = encrypted;
+  if (encrypted) {
+    Preferences prefs;
+    prefs.begin("pairing", false);
+    prefs.putBool("paired", true);
+    prefs.end();
+    _expectPairing = false;
+  }
+}
+
+void BleMouse::clearPairing() {
+  Preferences prefs;
+  prefs.begin("pairing", false);
+  prefs.putBool("paired", false);
+  prefs.end();
+  if (NimBLEDevice::getNumBonds() > 0) {
+    NimBLEDevice::deleteAllBonds();
+  }
+  _expectPairing = true;
+  _paired = false;
 }
 
 }  // namespace sw

@@ -35,7 +35,8 @@ constexpr uint8_t kBtnForward = 0x10;
 class BleMouse {
  public:
   /// 初始化 BLE 栈、HID 服务并开始广播
-  bool begin(const char* deviceName);
+  /// forceRepairing=true 时清空绑定并主动发起配对（"清除配对"操作）
+  bool begin(const char* deviceName, bool forceRepairing = false);
 
   bool isConnected() const { return _connected; }
   bool isPaired() const { return _paired; }
@@ -62,9 +63,13 @@ class BleMouse {
   void tick();
 
   // 供 NimBLE 回调使用
+  bool          _expectPairing = true;   ///< 连接后是否需主动发起配对（回调访问）
   void onConnected();
   void onDisconnected();
   void onAuthenticated(bool encrypted);
+
+  /// 清空配对记录，下次连接重新配对
+  void clearPairing();
 
  private:
   bool sendReport(int8_t dx, int8_t dy, int8_t wheel, int8_t pan);

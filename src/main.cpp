@@ -43,6 +43,13 @@ bool          g_touchActive = false;  ///< 拇指正按在屏幕上
 AppMode       g_appMode = AppMode::Air;
 
 bool     g_holdLeft = false;
+bool     g_dragLock = false;   ///< 双击拖拽锁定 (drag lock)
+
+// 省电状态机: 无输入 5 分钟降亮 + IMU 降频; 30 分钟深度睡眠
+uint32_t g_lastActivityMs = 0;
+uint8_t  g_brightNormal = 120;
+bool     g_powerSave = false;
+uint32_t g_lastImuSampleMs = 0;
 bool     g_frozen = false;
 uint32_t g_suppressUntil = 0;
 
@@ -280,6 +287,11 @@ void toggleMode() {
   }
   g_frozen = false;
   g_pendX = g_pendY = 0;
+  if (g_dragLock || g_holdLeft) {
+    g_dragLock = false;
+    g_holdLeft = false;
+    g_mouse.setButtons(0);
+  }
   M5.Power.setVibration(200);
   g_vibUntil = millis() + 120;
   g_lastFooter[0] = '\0';
@@ -297,7 +309,20 @@ void handleButtons() {
   const bool both = M5.BtnA.isPressed() && M5.BtnB.isPressed();
   if (both) {
     if (bothSince == 0) bothSince = millis();
-    if (!chordFired && millis() - bothSince >= 600) {
+    const uint32_t heldMs = millis() - bothSince;
+    // A+B 按住 10 秒 = 清除配对（换主机用）
+    if (heldMs >= 10000) {
+      g_mouse.clearPairing();
+      M5.Display.setTextDatum(textdatum_t::middle_center);
+      M5.Display.setTextDatum(textdatum_t::middle_center);
+      M5.Display.setFont(&fonts::efontCN_24);
+      M5.Display.setTextColor(0xFD20);
+      M5.Display.drawString("已清除配对", kScreen / 2, 233);
+      Serial.println("[ble] 用户请求清除配对");
+      delay(1500);
+      ESP.restart();
+    }
+    if (!chordFired && heldMs >= 600) {
       chordFired = true;
       if (g_holdLeft) {
         g_holdLeft = false;
@@ -326,16 +351,39 @@ void handleButtons() {
   if (millis() < g_suppressUntil) return;
 
   // A
-  if (M5.BtnA.wasHold()) {
+  // mediaHold: A 按住 + 拇指在屏上 = 媒体模式, A 的左键语义让位
+  const bool mediaHold = M5.BtnA.isPressed() && g_touchActive;
+  if (mediaHold) {
+    // 媒体模式由 loop() 的手势分支处理
+  } else if (M5.BtnA.wasHold()) {
     g_holdLeft = true;
     g_mouse.setButtons(sw::kBtnLeft);
   } else if (M5.BtnA.wasReleasedAfterHold()) {
     g_holdLeft = false;
     g_mouse.setButtons(0);
   } else if (M5.BtnA.wasDoubleClicked()) {
-    g_mouse.doubleClick(sw::kBtnLeft, 30, 45);
+    if (g_dragLock) {
+      // 已处于拖拽锁定: 双击 = 释放
+      g_dragLock = false;
+      g_mouse.setButtons(0);
+      M5.Power.setVibration(200);
+      g_vibUntil = millis() + 150;
+    } else {
+      g_mouse.doubleClick(sw::kBtnLeft, 30, 45);
+      // Drag lock: 双击后进入拖拽锁定, 单击或移动结束? Mac 风格: 双击保持按下
+      g_dragLock = true;
+      g_mouse.setButtons(sw::kBtnLeft);  // 保持按下
+      M5.Power.setVibration(150);
+      g_vibUntil = millis() + 120;
+    }
   } else if (M5.BtnA.wasSingleClicked()) {
-    g_mouse.click(sw::kBtnLeft);
+    if (g_dragLock) {
+      // 拖拽锁定中: 单击 = 释放
+      g_dragLock = false;
+      g_mouse.setButtons(0);
+    } else {
+      g_mouse.click(sw::kBtnLeft);
+    }
   }
 
   // B
@@ -373,10 +421,12 @@ void setup() {
 
   M5.Display.setRotation(0);
   M5.Display.setBrightness(120);
+  g_brightNormal = 120;
   M5.Display.setTextDatum(textdatum_t::middle_center);
   drawStatic();
 
   g_air.begin();
+  g_lastActivityMs = millis();
 
   g_mouse.setTxPower(3);
   if (!g_mouse.begin(kDeviceName)) {
@@ -390,6 +440,36 @@ void setup() {
 void loop() {
   M5.update();
   g_mouse.tick();  // 推进单击/双击时序
+
+  // ---- 输入活动检测（按键 / 触摸 / 指针移动都算活动）
+  if (M5.BtnA.isPressed() || M5.BtnB.isPressed() || M5.Touch.getDetail().isPressed() ||
+      g_touchActive || std::fabs(g_air.lastHorizontalDps()) > 10.0f ||
+      std::fabs(g_air.lastVerticalDps()) > 10.0f) {
+    g_lastActivityMs = millis();
+    if (g_powerSave) {
+      g_powerSave = false;
+      M5.Display.setBrightness(g_brightNormal);
+    }
+  }
+
+  // ---- 省电: 5 分钟无输入 -> 降亮 + IMU 降到 1/4 采样率
+  if (!g_powerSave && g_lastActivityMs != 0 &&
+      millis() - g_lastActivityMs > 5UL * 60UL * 1000UL) {
+    g_powerSave = true;
+    M5.Display.setBrightness(30);
+    Serial.println("[pwr] 进入省电模式");
+  }
+  // ---- 深度睡眠: 30 分钟无输入（B 键或 USB 唤醒）
+  if (g_lastActivityMs != 0 &&
+      millis() - g_lastActivityMs > 30UL * 60UL * 1000UL) {
+    Serial.println("[pwr] 深度睡眠, 按任意键唤醒");
+    M5.Display.setBrightness(0);
+    // GPIO0 (BtnA) 低电平唤醒; 电源键也可唤醒
+    esp_sleep_enable_ext0_wakeup(GPIO_NUM_1, 0);   // BtnB = GPIO1
+    esp_sleep_enable_ext1_wakeup(0x2ULL << 0, ESP_EXT1_WAKEUP_ANY_LOW);
+    delay(100);
+    esp_deep_sleep_start();
+  }
 
   if (g_vibUntil && static_cast<int32_t>(millis() - g_vibUntil) >= 0) {
     M5.Power.setVibration(0);
@@ -412,8 +492,8 @@ void loop() {
 
   // ---- 触控板手势: 两种模式下都可用（滚动 + 快滑后退/前进）
   // 拇指按住屏幕期间暂停 IMU 指针，避免滚动的同时指针乱飞。
-  // B 键按住 + 拇指上下滑 = 音量调节 (媒体层)
-  const bool mediaMode = M5.BtnB.isPressed();
+  // A 键按住 + 拇指手势 = 媒体层 (音量/播放)
+  const bool mediaMode = M5.BtnA.isPressed();
   sw::TouchOutput to;
   g_touchpad.update(nowMs, to);
   g_touchActive = g_touchpad.active();
@@ -472,7 +552,8 @@ void loop() {
 
   if (g_air.calibrated() && g_mouse.isConnected() && !g_frozen && !g_touchActive) {
     // 采样: 高频读取传感器, 保证不丢动作
-    if (nowMs - g_lastImuMs >= 8) {
+    const uint32_t imuInterval = g_powerSave ? 32 : 8;
+    if (nowMs - g_lastImuMs >= imuInterval) {
       float dt = static_cast<float>(nowUs - g_lastImuUs) / 1000000.0f;
       if (dt > 0.05f) dt = 0.05f;
       g_lastImuUs = nowUs;

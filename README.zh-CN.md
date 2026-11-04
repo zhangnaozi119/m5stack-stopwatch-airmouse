@@ -4,7 +4,7 @@
 
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32--S3-orange)](https://platformio.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.0.15-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](CHANGELOG.md)
 
 [English](README.md) | 简体中文
 
@@ -143,9 +143,8 @@ include/
   version.h
 src/
   main.cpp           按键、界面、主循环
-  air_mouse.cpp
-lib/
-  HijelHID_BLEMouse/ 内置的 BLE HID 鼠标库（Apache-2.0）
+  air_mouse.cpp      传感器 → 指针换算
+  ble_mouse.cpp      自研 BLE HID 层
 ```
 
 ---
@@ -162,7 +161,8 @@ lib/
 
 ## 致谢
 
-- [HijelHID_BLEMouse](https://github.com/HijelHub/HijelHID_BLEMouse) —— BLE HID 鼠标库（Apache-2.0），已内置到 `lib/`。
+- BLE HID 层为自研实现，基于 [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) 的公共 API，不依赖第三方 HID 库。
+  三个踩过的坑写在 `include/ble_mouse.h` 的注释里。
 - [M5Unified](https://github.com/m5stack/M5Unified) / [M5GFX](https://github.com/m5stack/M5GFX) —— M5Stack 硬件抽象层。
 
 详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

@@ -4,7 +4,7 @@
 
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32--S3-orange)](https://platformio.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.0.15-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](CHANGELOG.md)
 
 English | [简体中文](README.zh-CN.md)
 
@@ -150,9 +150,8 @@ include/
   version.h
 src/
   main.cpp           wiring, buttons, UI
-  air_mouse.cpp
-lib/
-  HijelHID_BLEMouse/ vendored BLE HID mouse library (Apache-2.0)
+  air_mouse.cpp      sensor → pointer mapping
+  ble_mouse.cpp      self-contained BLE HID layer
 ```
 
 ---
@@ -172,10 +171,15 @@ lib/
 
 ## Credits
 
-- [HijelHID_BLEMouse](https://github.com/HijelHub/HijelHID_BLEMouse) — BLE HID
-  mouse library (Apache-2.0), vendored under `lib/`.
+The BLE HID layer is implemented in-house on top of NimBLE-Arduino's public API,
+with no third-party HID library. Three pitfalls are documented in
+`include/ble_mouse.h`: the no-op `startServices()` in NimBLE 2.5.1, the
+`READ_ENC` flag on NimBLE's default input report, and hosts not initiating
+pairing on their own.
+
+- [NimBLE-Arduino](https://github.com/h2zero/NimBLE-Arduino) — BLE stack
 - [M5Unified](https://github.com/m5stack/M5Unified) / [M5GFX](https://github.com/m5stack/M5GFX)
-  — M5Stack hardware abstraction.
+  — M5Stack hardware abstraction
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

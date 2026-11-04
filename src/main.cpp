@@ -14,7 +14,7 @@
  *   A+B 长按 切换 空中鼠 / 水平鼠
  */
 #include <M5Unified.h>
-#include <HijelHID_BLEMouse.h>
+#include "ble_mouse.h"
 
 #include <cmath>
 #include <cstdio>
@@ -28,7 +28,7 @@ namespace {
 constexpr const char* kDeviceName = "M5 AirMouse";
 constexpr int16_t kScreen = 466;
 
-HijelBLEMouse g_mouse(kDeviceName, "M5Stack", 100, 3, false);
+sw::BleMouse g_mouse;
 sw::AirMouse  g_air;
 
 bool     g_holdLeft = false;
@@ -243,7 +243,7 @@ void handleButtons() {
       chordFired = true;
       if (g_holdLeft) {
         g_holdLeft = false;
-        g_mouse.release(MouseButton::Left);
+        g_mouse.setButtons(0);
       }
       toggleMode();
       g_suppressUntil = millis() + 300;
@@ -257,14 +257,14 @@ void handleButtons() {
   // A
   if (M5.BtnA.wasHold()) {
     g_holdLeft = true;
-    g_mouse.press(MouseButton::Left);
+    g_mouse.setButtons(sw::kBtnLeft);
   } else if (M5.BtnA.wasReleasedAfterHold()) {
     g_holdLeft = false;
-    g_mouse.release(MouseButton::Left);
+    g_mouse.setButtons(0);
   } else if (M5.BtnA.wasDoubleClicked()) {
-    g_mouse.doubleClick(MouseButton::Left, 30, 45);
+    g_mouse.doubleClick(sw::kBtnLeft, 30, 45);
   } else if (M5.BtnA.wasSingleClicked()) {
-    g_mouse.click(MouseButton::Left);
+    g_mouse.click(sw::kBtnLeft);
   }
 
   // B
@@ -284,7 +284,7 @@ void handleButtons() {
     g_air.resetAccum();
     M5.Speaker.tone(g_frozen ? 600 : 900, 60, 0, true);
   } else if (M5.BtnB.wasSingleClicked()) {
-    g_mouse.click(MouseButton::Right);
+    g_mouse.click(sw::kBtnRight);
   }
 }
 
@@ -307,10 +307,10 @@ void setup() {
 
   g_air.begin();
 
-  g_mouse.setUpdateRate(HIDRate::Hz50);
   g_mouse.setTxPower(3);
-  g_mouse.setLogLevel(HIDLogLevel::Normal);  // 避免每条报告刷屏
-  g_mouse.begin();
+  if (!g_mouse.begin(kDeviceName)) {
+    Serial.println("[airmouse] BLE 初始化失败");
+  }
   Serial.println("[airmouse] HID 已启动");
 
   drawUi();
@@ -318,6 +318,7 @@ void setup() {
 
 void loop() {
   M5.update();
+  g_mouse.tick();  // 推进单击/双击时序
 
   if (g_vibUntil && static_cast<int32_t>(millis() - g_vibUntil) >= 0) {
     M5.Power.setVibration(0);
@@ -361,7 +362,7 @@ void loop() {
       if (sx < -127) sx = -127;
       if (sy > 127) sy = 127;
       if (sy < -127) sy = -127;
-      g_mouse.move(static_cast<int16_t>(sx), static_cast<int16_t>(sy));
+      g_mouse.move(static_cast<int8_t>(sx), static_cast<int8_t>(sy));
       g_pendX -= sx;
       g_pendY -= sy;
       ++g_sentCount;

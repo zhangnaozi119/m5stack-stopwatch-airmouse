@@ -1,5 +1,20 @@
 # 变更记录
 
+## v0.1.0 — 移除第三方 HID 库，改为自研
+
+v0.0.x 内置了 HijelHID_BLEMouse（Apache-2.0）并打了 4 处补丁。
+根因定位清楚后，自研一层反而更简单可控。
+
+**改动**
+- 新增 `src/ble_mouse.cpp` / `include/ble_mouse.h`（约 240 行）。
+- 删除 `lib/HijelHID_BLEMouse/`，仓库不再包含第三方 HID 代码。
+- 点击/双击时序由自研层用 `tick()` 驱动，不再依赖库内 FreeRTOS 任务。
+
+**保留的三条关键处理**（写在 `ble_mouse.h` 注释里）
+1. 显式 `NimBLEServer::start()` —— NimBLE 2.5.1 的 `startServices()` 是空函数。
+2. 自建 Input Report 特征，去掉 `READ_ENC`。
+3. `onConnect` 主动 `startSecurity()`。
+
 ## v0.0.15 — 提高空中鼠灵敏度
 
 - `_gain` 由 14.0 提高到 **22.0**（约 1.6 倍）。

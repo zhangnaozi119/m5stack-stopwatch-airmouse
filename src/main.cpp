@@ -21,6 +21,7 @@
 #include <cstring>
 
 #include "air_mouse.h"
+#include "touchpad.h"
 #include "version.h"
 
 namespace {
@@ -28,8 +29,13 @@ namespace {
 constexpr const char* kDeviceName = "M5 AirMouse";
 constexpr int16_t kScreen = 466;
 
+/// 三种工作模式
+enum class AppMode : uint8_t { Air = 0, Level, Touch };
+
 sw::BleMouse g_mouse;
 sw::AirMouse  g_air;
+sw::Touchpad  g_touchpad;
+AppMode       g_appMode = AppMode::Air;
 
 bool     g_holdLeft = false;
 bool     g_frozen = false;
@@ -127,6 +133,8 @@ void drawUi() {
   char sub[48];
   if (!conn) {
     snprintf(sub, sizeof(sub), "在电脑蓝牙里选择 %s", kDeviceName);
+  } else if (g_appMode == AppMode::Touch) {
+    snprintf(sub, sizeof(sub), "%s", g_touchpad.hint()[0] ? g_touchpad.hint() : "滑动=滚动  快滑左右=后退/前进");
   } else {
     snprintf(sub, sizeof(sub), "H %+5.1f  V %+5.1f  %s",
              g_air.lastHorizontalDps(), g_air.lastVerticalDps(),
@@ -137,8 +145,40 @@ void drawUi() {
     redrawText(d, sub, 244, 400, 22, kDim, &fonts::efontCN_14);
   }
 
-  // ---- 方向指示
-  if (conn) {
+  // ---- 方向指示 / 触控点
+  if (conn && g_appMode == AppMode::Touch) {
+    // 触控板: 底部画一个小的"触控镜"，圆点位置按比例映射手指位置。
+    // 直接在屏幕上按手指坐标画点会和手指重叠，缩小到中央更直观。
+    constexpr int16_t padCx = kScreen / 2, padCy = 300, padR = 44;
+    static bool padDrawn = false;
+    static int16_t lastDotX = INT16_MAX, lastDotY = INT16_MAX;
+
+    if (!padDrawn) {
+      d.drawCircle(padCx, padCy, padR, 0x2104);
+      padDrawn = true;
+      lastDotX = lastDotY = INT16_MAX;
+    }
+    if (g_touchpad.active()) {
+      // 手指坐标 (0..466) → 镜内坐标，clamp 到圆内
+      int16_t dx = (g_touchpad.x() - padCx) * padR / 233;
+      int16_t dy = (g_touchpad.y() - padCy) * padR / 233;
+      const int32_t dist2 = static_cast<int32_t>(dx) * dx + static_cast<int32_t>(dy) * dy;
+      if (dist2 > (padR - 8) * (padR - 8)) {
+        const float k = (padR - 8) / std::sqrt(static_cast<float>(dist2));
+        dx = static_cast<int16_t>(dx * k);
+        dy = static_cast<int16_t>(dy * k);
+      }
+      const int16_t dotX = padCx + dx, dotY = padCy + dy;
+      if (dotX != lastDotX || dotY != lastDotY) {
+        if (lastDotX != INT16_MAX) d.fillCircle(lastDotX, lastDotY, 8, 0x0000);
+        d.fillCircle(dotX, dotY, 8, kAccent);
+        lastDotX = dotX; lastDotY = dotY;
+      }
+    } else if (lastDotX != INT16_MAX) {
+      d.fillCircle(lastDotX, lastDotY, 8, 0x0000);
+      lastDotX = lastDotY = INT16_MAX;
+    }
+  } else if (conn) {
     const int16_t cx = kScreen / 2, cy = 316;
     const float h = g_air.lastHorizontalDps();
     const float v = g_air.lastVerticalDps();
@@ -177,7 +217,7 @@ void drawUi() {
   }
 
   // ---- 陀螺仪峰值 (3 秒滚动窗口), 用于确认动作是否产生旋转
-  if (conn) {
+  if (conn && g_appMode != AppMode::Touch) {
     static float pkX = 0, pkY = 0, pkZ = 0;
     static uint32_t pkStart = 0;
     float gx = 0, gy = 0, gz = 0;
@@ -203,11 +243,17 @@ void drawUi() {
   char info[64];
   char modeBuf[24];
   const char* modeText;
-  if (g_air.mode() == sw::AirMouse::Mode::Level) {
-    snprintf(modeBuf, sizeof(modeBuf), "水平鼠 %u", g_air.levelOrientation());
-    modeText = modeBuf;
-  } else {
-    modeText = g_air.axisMode() == 0 ? "空中鼠 竖Y" : "空中鼠 竖X";
+  switch (g_appMode) {
+    case AppMode::Level:
+      snprintf(modeBuf, sizeof(modeBuf), "水平鼠 %u", g_air.levelOrientation());
+      modeText = modeBuf;
+      break;
+    case AppMode::Touch:
+      modeText = "触控板";
+      break;
+    default:
+      modeText = g_air.axisMode() == 0 ? "空中鼠 竖Y" : "空中鼠 竖X";
+      break;
   }
   snprintf(info, sizeof(info), "%s   %s   电量 %u%%",
            modeText, g_frozen ? "已冻结" : "跟随",
@@ -221,13 +267,31 @@ void drawUi() {
 // ---------------------------------------------------------------- 模式
 
 void toggleMode() {
-  const bool toLevel = g_air.mode() == sw::AirMouse::Mode::Rate;
-  g_air.setMode(toLevel ? sw::AirMouse::Mode::Level : sw::AirMouse::Mode::Rate);
+  switch (g_appMode) {
+    case AppMode::Air:
+      g_appMode = AppMode::Level;
+      g_air.setMode(sw::AirMouse::Mode::Level);
+      M5.Speaker.tone(1500, 80, 0, true);
+      break;
+    case AppMode::Level:
+      g_appMode = AppMode::Touch;
+      g_touchpad.begin();
+      M5.Speaker.tone(2000, 80, 0, true);
+      break;
+    case AppMode::Touch:
+      g_appMode = AppMode::Air;
+      g_air.setMode(sw::AirMouse::Mode::Rate);
+      M5.Speaker.tone(1000, 80, 0, true);
+      break;
+  }
   g_frozen = false;
+  g_pendX = g_pendY = 0;
   M5.Power.setVibration(200);
   g_vibUntil = millis() + 120;
-  M5.Speaker.tone(toLevel ? 1500 : 1000, 80, 0, true);
   g_lastFooter[0] = '\0';
+  g_lastState[0] = '\0';
+  g_lastSub[0] = '\0';
+  g_lastDiag[0] = '\0';
 }
 
 // ---------------------------------------------------------------- 按键
@@ -339,7 +403,23 @@ void loop() {
   const uint32_t nowMs = millis();
   if (g_lastImuUs == 0) g_lastImuUs = nowUs;
 
-  if (g_air.calibrated() && g_mouse.isConnected() && !g_frozen) {
+  if (g_appMode == AppMode::Touch) {
+    // ---- 触控板：滚动 + 轻点 + 快滑
+    g_lastImuUs = nowUs;
+    g_pendX = g_pendY = 0;
+    if (g_mouse.isConnected() && !g_frozen) {
+      sw::TouchOutput to;
+      g_touchpad.update(nowMs, to);
+      if (to.wheel != 0 || to.pan != 0) {
+        g_mouse.move(0, 0, to.wheel, to.pan);
+        ++g_sentCount;
+      }
+      if (to.leftClick)    g_mouse.click(sw::kBtnLeft);
+      if (to.rightClick)   g_mouse.click(sw::kBtnRight);
+      if (to.back)         g_mouse.click(sw::kBtnBack);
+      if (to.forward)      g_mouse.click(sw::kBtnForward);
+    }
+  } else if (g_air.calibrated() && g_mouse.isConnected() && !g_frozen) {
     // 采样: 高频读取传感器, 保证不丢动作
     if (nowMs - g_lastImuMs >= 8) {
       float dt = static_cast<float>(nowUs - g_lastImuUs) / 1000000.0f;

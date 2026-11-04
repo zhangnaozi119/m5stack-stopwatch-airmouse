@@ -71,7 +71,7 @@ class AirMouse {
   uint8_t _axisMode = 0;       ///< 0=世界坐标投影  1=设备坐标
   uint8_t _levelRot = 1;       ///< 水平鼠轴向旋转
   bool    _levelMirror = false;///< 水平鼠水平镜像
-  bool    _invertX = false;
+  bool    _invertX = true;   // 实测左右方向相反
 
   // 世界坐标投影用的重力方向 (设备坐标系, 低通后)
   float _upX = 0.0f, _upY = 0.0f, _upZ = 1.0f;

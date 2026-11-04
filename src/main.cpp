@@ -185,7 +185,7 @@ void drawUi() {
     snprintf(modeBuf, sizeof(modeBuf), "水平鼠 %u", g_air.levelOrientation());
     modeText = modeBuf;
   } else {
-    modeText = g_air.axisMode() == 0 ? "空中鼠 X/Y" : "空中鼠 Z/Y";
+    modeText = g_air.axisMode() == 0 ? "空中鼠 竖Y" : "空中鼠 竖X";
   }
   snprintf(info, sizeof(info), "%s   %s   电量 %u%%",
            modeText, g_frozen ? "已冻结" : "跟随",
@@ -371,10 +371,11 @@ void loop() {
     const bool okA = M5.Imu.getAccel(&ax, &ay, &az);
     const bool okG = M5.Imu.getGyro(&gx, &gy, &gz);
     Serial.printf("[dbg] cal=%d conn=%d mode=%d okA=%d okG=%d "
-                  "A(%.2f,%.2f,%.2f) G(%.1f,%.1f,%.1f) sent=%lu\n",
+                  "A(%.2f,%.2f,%.2f) G(%.1f,%.1f,%.1f) HV(%.1f,%.1f) sent=%lu\n",
                   g_air.calibrated() ? 1 : 0, g_mouse.isConnected() ? 1 : 0,
                   static_cast<int>(g_air.mode()), okA ? 1 : 0, okG ? 1 : 0,
                   ax, ay, az, gx, gy, gz,
+                  g_air.lastHorizontalDps(), g_air.lastVerticalDps(),
                   static_cast<unsigned long>(g_sentCount));
   }
 

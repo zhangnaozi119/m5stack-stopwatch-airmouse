@@ -114,25 +114,31 @@ bool AirMouse::update(float dtSec, int8_t& dx, int8_t& dy) {
         const float un = std::sqrt(ux * ux + uy * uy + uz * uz);
         if (un > 0.1f) { ux /= un; uy /= un; uz /= un; }
 
-        // 设备 X 轴投影到水平面 -> 世界"右"方向
-        const float d = ux;  // dot((1,0,0), up)
-        float rx = 1.0f - d * ux;
-        float ry = -d * uy;
-        float rz = -d * uz;
-        const float rn = std::sqrt(rx * rx + ry * ry + rz * rz);
-        if (rn > 0.2f) {
-          rx /= rn; ry /= rn; rz /= rn;
-          h = gx * ux + gy * uy + gz * uz;      // yaw
-          v = gx * rx + gy * ry + gz * rz;      // pitch
+        // 水平: 绕世界竖直轴的旋转 (yaw), 与握姿无关
+        h = gx * ux + gy * uy + gz * uz;
+
+        // 垂直: 选定的"前方"轴投影到水平面后的旋转分量
+        //   轴模式 0 -> 设备 Y 轴 (平放、屏幕朝向自己时更自然)
+        //   轴模式 1 -> 设备 X 轴
+        float fx = (_axisMode == 0) ? 0.0f : 1.0f;
+        float fy = (_axisMode == 0) ? 1.0f : 0.0f;
+        const float d = fx * ux + fy * uy;  // fz = 0
+        float px = fx - d * ux;
+        float py = fy - d * uy;
+        float pz = -d * uz;
+        const float pn = std::sqrt(px * px + py * py + pz * pz);
+        if (pn > 0.2f) {
+          px /= pn; py /= pn; pz /= pn;
+          v = gx * px + gy * py + gz * pz;
         } else {
-          h = gx; v = gy;  // 设备 X 轴几乎竖直, 退化
+          v = gy;  // 该轴几乎竖直, 退化
         }
       } else {
-        h = gx; v = gy;
+        h = gz; v = gy;
       }
     } else {
-      // 设备坐标 (旧行为), 适合固定握姿
-      h = gx - _biasX;
+      // 设备坐标 (不做投影), 适合固定握姿
+      h = gz - _biasZ;
       v = gy - _biasY;
     }
     _lastH = h;

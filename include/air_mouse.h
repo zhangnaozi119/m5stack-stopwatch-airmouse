@@ -66,12 +66,16 @@ class AirMouse {
 
   float _biasX = 0, _biasY = 0, _biasZ = 0;
 
-  float   _gain = 8.0f;        ///< 飞鼠: 像素 / (度/秒 · 秒)
-  float   _levelGain = 60.0f;  ///< 水平仪: 像素 / (度 · 秒)
-  uint8_t _axisMode = 0;
-  uint8_t _levelRot = 1;       ///< 水平仪轴向旋转
-  bool    _levelMirror = false;///< 水平仪水平镜像
+  float   _gain = 14.0f;       ///< 空中鼠: 像素 / (度/秒 · 秒)
+  float   _levelGain = 60.0f;  ///< 水平鼠: 像素 / (度 · 秒)
+  uint8_t _axisMode = 0;       ///< 0=世界坐标投影  1=设备坐标
+  uint8_t _levelRot = 1;       ///< 水平鼠轴向旋转
+  bool    _levelMirror = false;///< 水平鼠水平镜像
   bool    _invertX = false;
+
+  // 世界坐标投影用的重力方向 (设备坐标系, 低通后)
+  float _upX = 0.0f, _upY = 0.0f, _upZ = 1.0f;
+  bool  _upValid = false;
 
   Mode  _mode = Mode::Rate;
   float _refRoll = 0, _refPitch = 0;

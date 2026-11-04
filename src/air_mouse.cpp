@@ -88,13 +88,53 @@ bool AirMouse::update(float dtSec, int8_t& dx, int8_t& dy) {
   float h = 0, v = 0;
 
   if (_mode == Mode::Rate) {
-    // ---- 空中飞鼠: 陀螺仪角速度
-    // 实测(平放握持): 左右倾斜 -> X 轴, 上下倾斜 -> Y 轴, Z 轴(偏航)能量最小。
-    // 因此水平默认用 X, 垂直用 Y; 另一档用 Z 做水平(适合竖直握持)。
+    // ---- 空中鼠: 陀螺仪角速度
     float gx = 0, gy = 0, gz = 0;
     if (!M5.Imu.getGyro(&gx, &gy, &gz)) return false;
-    h = (_axisMode == 0) ? (gx - _biasX) : (gz - _biasZ);
-    v = gy - _biasY;
+
+    if (_axisMode == 0) {
+      // 世界坐标投影: 用加速度计估计重力方向, 把角速度分解为
+      //   yaw   (绕世界竖直轴) -> 水平
+      //   pitch (绕世界水平右轴) -> 垂直
+      // 这样无论平放还是竖握, 响应都一致。
+      float ax = 0, ay = 0, az = 0;
+      if (M5.Imu.getAccel(&ax, &ay, &az)) {
+        float n = std::sqrt(ax * ax + ay * ay + az * az);
+        if (n > 0.3f) {
+          // 低通, 抑制加速度计噪声
+          _upX = _upX * 0.9f + (ax / n) * 0.1f;
+          _upY = _upY * 0.9f + (ay / n) * 0.1f;
+          _upZ = _upZ * 0.9f + (az / n) * 0.1f;
+          _upValid = true;
+        }
+      }
+
+      if (_upValid) {
+        float ux = _upX, uy = _upY, uz = _upZ;
+        const float un = std::sqrt(ux * ux + uy * uy + uz * uz);
+        if (un > 0.1f) { ux /= un; uy /= un; uz /= un; }
+
+        // 设备 X 轴投影到水平面 -> 世界"右"方向
+        const float d = ux;  // dot((1,0,0), up)
+        float rx = 1.0f - d * ux;
+        float ry = -d * uy;
+        float rz = -d * uz;
+        const float rn = std::sqrt(rx * rx + ry * ry + rz * rz);
+        if (rn > 0.2f) {
+          rx /= rn; ry /= rn; rz /= rn;
+          h = gx * ux + gy * uy + gz * uz;      // yaw
+          v = gx * rx + gy * ry + gz * rz;      // pitch
+        } else {
+          h = gx; v = gy;  // 设备 X 轴几乎竖直, 退化
+        }
+      } else {
+        h = gx; v = gy;
+      }
+    } else {
+      // 设备坐标 (旧行为), 适合固定握姿
+      h = gx - _biasX;
+      v = gy - _biasY;
+    }
     _lastH = h;
     _lastV = v;
     h = deadzone(h, kDeadzoneDps);

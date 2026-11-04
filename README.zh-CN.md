@@ -4,7 +4,7 @@
 
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32--S3-orange)](https://platformio.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.0.8-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.0.15-blue)](CHANGELOG.md)
 
 [English](README.md) | 简体中文
 
@@ -27,6 +27,8 @@
 ## 功能
 
 - **两种指向模式**，分别由不同传感器驱动
+- **世界坐标投影**：用重力方向把陀螺仪向量投影到世界坐标轴，
+  任何握姿下左右/上下都保持一致
 - **水平鼠 8 向校准**（4 种旋转 × 2 种镜像），运行时按 B 长按循环切换
 - **完整鼠标按键**：单击、双击（打开文件）、拖拽、右键
 - **冻结**：重新对中设备时不移动指针
@@ -91,7 +93,7 @@ pio run -t upload --upload-port COM4
 | **A** 长按 | 按住左键拖拽 |
 | **B** 短按 | 右键单击 |
 | **B** 双击 | 冻结/解冻移动 |
-| **B** 长按 | 空中鼠：切换轴向 · 水平鼠：切换 8 向校准 |
+| **B** 长按 | 空中鼠：垂直轴 Y/X · 水平鼠：切换 8 向校准 |
 | **A + B** 长按 | 切换 空中鼠 ↔ 水平鼠 |
 
 ### 调参
@@ -100,7 +102,7 @@ pio run -t upload --upload-port COM4
 
 | 常量 | 默认 | 作用 |
 |---|---|---|
-| `_gain` | 8.0 | 空中鼠速度（像素 / dps·秒） |
+| `_gain` | 22.0 | 空中鼠速度（像素 / dps·秒） |
 | `_levelGain` | 60.0 | 水平鼠速度（像素 / 度·秒） |
 | `kDeadzoneDps` | 0.8 | 空中鼠死区 |
 | `kDeadzoneDeg` | 1.5 | 水平鼠死区 |
@@ -150,6 +152,8 @@ lib/
 
 ## 已知限制
 
+- **陀螺仪测旋转，不测平移。** 平放时单纯左右平移手臂不会产生任何角速度信号，
+  需要转动手腕（yaw）。这是所有陀螺仪空中鼠标的共同限制。
 - 未实现绝对定位（激光笔式）；水平鼠采用速度映射，因此不需要与主机屏幕标定。
 - BLE 连接间隔由主机协商，间隔过大时指针会显得迟滞。
 - macOS 对 HID 描述符的接受度可能低于 Windows/Linux。

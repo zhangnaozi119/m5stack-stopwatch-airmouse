@@ -4,7 +4,7 @@
 
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32--S3-orange)](https://platformio.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.0.8-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.0.15-blue)](CHANGELOG.md)
 
 English | [简体中文](README.zh-CN.md)
 
@@ -17,8 +17,8 @@ The round AMOLED watch becomes a two-mode pointing device:
 
 | Mode | Sensor | Feel |
 |---|---|---|
-| **Air mouse** | Gyroscope (angular rate) | Like waving a mouse — stop moving, cursor stops |
-| **Level** | Accelerometer (tilt) | Like a joystick — tilt to move, level to stop |
+| **Air Mouse** | Gyroscope (angular rate) | Like waving a mouse — stop moving, cursor stops |
+| **Level Mouse** | Accelerometer (tilt) | Like a joystick — tilt to move, level to stop |
 
 Switch modes by holding **A + B** for 0.6 s. No drivers, no dongle — it pairs
 as a standard Bluetooth mouse.
@@ -28,13 +28,15 @@ as a standard Bluetooth mouse.
 ## Features
 
 - **Two pointing modes** driven by different sensors
+- **World-frame projection** in air-mouse mode: the gyro vector is projected
+  onto world axes using gravity, so left/right and up/down stay correct in any grip
 - **Eight-way axis calibration** for level mode (4 rotations × 2 mirrors),
   cycled at runtime with a long press of B
 - **Full mouse buttons**: click, double-click (opens files), drag, right-click
 - **Freeze** to re-centre the device without moving the cursor
 - **Haptic + audio feedback** on every mode and axis change
-- **On-screen diagnostics**: pairing state and sent-report counter, so you can
-  debug without a serial cable
+- **On-screen diagnostics**: pairing state, sent-report counter, and a rolling
+  3-second gyro peak, so you can debug without a serial cable
 - **Battery level** reported over the standard HID battery service
 
 ---
@@ -96,8 +98,8 @@ pio run -t upload --upload-port COM4
 | **A** long | Hold left button (drag) |
 | **B** short | Right click |
 | **B** double | Freeze / unfreeze movement |
-| **B** long | Air mouse: switch axis · Level: cycle orientation (0–7) |
-| **A + B** long | Switch air mouse ↔ level |
+| **B** long | Air Mouse: vertical axis Y/X · Level Mouse: orientation (0–7) |
+| **A + B** long | Switch Air Mouse ↔ Level Mouse |
 
 ### Tuning
 
@@ -105,7 +107,7 @@ The defaults live in `include/air_mouse.h`:
 
 | Constant | Default | Effect |
 |---|---|---|
-| `_gain` | 8.0 | Air-mouse speed (px per dps·s) |
+| `_gain` | 22.0 | Air-mouse speed (px per dps·s) |
 | `_levelGain` | 60.0 | Level-mode speed (px per degree·s) |
 | `kDeadzoneDps` | 0.8 | Air-mouse dead zone |
 | `kDeadzoneDeg` | 1.5 | Level-mode dead zone |
@@ -157,6 +159,9 @@ lib/
 
 ## Known limitations
 
+- **A gyroscope measures rotation, not translation.** Sliding the device sideways
+  without rotating it produces no signal in any gyro-based air mouse. Rotate the
+  wrist (yaw) instead of translating the arm.
 - Absolute (laser-pointer) positioning is not implemented; level mode is
   velocity-based so it needs no calibration against the host screen.
 - The BLE connection interval is negotiated by the host; a very slow interval

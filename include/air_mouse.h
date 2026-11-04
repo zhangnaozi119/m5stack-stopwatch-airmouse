@@ -69,7 +69,7 @@ class AirMouse {
 
   float _biasX = 0, _biasY = 0, _biasZ = 0;
 
-  float   _gain = 14.0f;       ///< 空中鼠: 像素 / (度/秒 · 秒)
+  float   _gain = 22.0f;       ///< 空中鼠: 像素 / (度/秒 · 秒)
   float   _levelGain = 60.0f;  ///< 水平鼠: 像素 / (度 · 秒)
   uint8_t _axisMode = 0;       ///< 0=世界坐标投影  1=设备坐标
   uint8_t _levelRot = 1;       ///< 水平鼠轴向旋转

@@ -7,6 +7,11 @@
     pip install bleak
     python tools/voice_bridge.py
 
+打包成 exe：
+    pip install pyinstaller
+    pyinstaller --onefile --name M5VoiceBridge --collect-all bleak ^
+        --collect-submodules winrt tools/voice_bridge.py
+
 放在后台常驻即可；设备断开后会自动重连。
 """
 
@@ -120,6 +125,10 @@ async def main() -> None:
     if sys.platform != "win32":
         print("This helper only works on Windows.")
         return
+
+    # 打包成 exe 后输出默认是块缓冲的, 重定向到文件时看不到任何日志
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
 
     while True:
         try:

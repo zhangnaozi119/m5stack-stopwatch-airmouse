@@ -154,6 +154,7 @@ bool BleMouse::begin(const char* deviceName, bool /*forceRepairing*/) {
   }
   const uint8_t ctrlIdle = kCtrlVoiceUp;
   _ctrl->setValue(&ctrlIdle, 1);
+  Serial.printf("[ble] 控制服务已注册 ctrl=%p\n", static_cast<void*>(_ctrl));
 
   _hid->setBatteryLevel(_battery);
 
@@ -161,6 +162,10 @@ bool BleMouse::begin(const char* deviceName, bool /*forceRepairing*/) {
     Serial.println("[ble] GATT server 启动失败");
     return false;
   }
+  Serial.printf("[ble] 控制服务可查=%d\n",
+                _server->getServiceByUUID(
+                    NimBLEUUID("6d3578a0-1e2b-4c3d-9f4a-8b7c6d5e4f01")) != nullptr
+                    ? 1 : 0);
 
   setupAdvertising();
   startAdvertising();
@@ -186,16 +191,15 @@ void BleMouse::setupAdvertising() {
   adv->addServiceUUID(_hid->getHidService()->getUUID());
   adv->enableScanResponse(true);
   adv->setScanFilter(false, false);
-}
-
-void BleMouse::startAdvertising() {
-  // 只 start(), 不重复 addServiceUUID (会累积溢出)
-  NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->setAdvertisingCompleteCallback([](NimBLEAdvertising* a) {
     Serial.println("[ble] 广播停止, 自动重启");
     a->start();
   });
-  adv->start();
+}
+
+void BleMouse::startAdvertising() {
+  // 只 start(), 不重复 addServiceUUID (会累积溢出)
+  NimBLEDevice::getAdvertising()->start();
 }
 
 bool BleMouse::sendReport(int8_t dx, int8_t dy, int8_t wheel, int8_t pan) {
@@ -285,6 +289,9 @@ void BleMouse::setTxPower(uint8_t /*level*/) {
 
 void BleMouse::onConnected() {
   _connected = true;
+  // 连接期间继续广播: PC 端助手需要另开一条 GATT 连接来收语音命令。
+  // ESP32 NimBLE 默认支持 3 条并发连接, HID 与助手互不影响。
+  startAdvertising();
 }
 
 void BleMouse::onDisconnected() {

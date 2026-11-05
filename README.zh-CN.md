@@ -4,7 +4,7 @@
 
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32--S3-orange)](https://platformio.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.2-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.4-blue)](CHANGELOG.md)
 
 [English](README.md) | 简体中文
 
@@ -37,7 +37,7 @@
   - 快速左右滑 = 后退 / 前进
   - **轴锁定**：一个手势内只走一个方向，斜滑不会来回横跳
 - **五键鼠标**：左 / 右 / 中 / 后退 / 前进
-- **拖拽锁定**：双击锁定左键，移动设备即拖拽，再点一下释放
+- **语音输入**：按住 A 发 Ctrl+Win（配合微信输入法等），需要电脑端助手常驻
 - **冻结**：重新对中设备时不移动指针
 - **震动与提示音**：每次切换模式或轴向都有反馈
 - **屏幕自诊断**：显示配对状态与已发送报告数，不插线也能排查
@@ -96,9 +96,8 @@ pio run -t upload --upload-port COM4
 
 | 操作 | 功能 |
 |---|---|
-| **A** 短按 | 左键单击 |
-| **A** 双击 | 锁定 / 释放左键（拖拽） |
-| **A** 长按 | 按住左键拖拽 |
+| **A** 短按（< 0.35 s） | 左键单击 |
+| **A** 按住（≥ 0.35 s） | 语音输入：按住期间发送 Ctrl+Win，松开结束 |
 | **B** 短按 | 右键单击 |
 | **B** 双击 | 冻结 / 解冻移动 |
 | **B** 长按 | 空中鼠：垂直轴 Y/X · 水平鼠：切换 8 向校准 |
@@ -123,6 +122,27 @@ pio run -t upload --upload-port COM4
 
 拇指离开屏幕后 **120ms** 才恢复陀螺仪指针 —— 甩动滚动结束时手指常是「弹开」
 的，立刻接管指针会跟着设备动一下就飞出去。
+
+### 语音输入
+
+设备通过一个**厂商自定义 BLE 特征**把「按下 / 松开」发给电脑端助手，助手再用
+`SendInput` 合成 Ctrl+Win —— 这样绕开了 HID 描述符的限制（原因见「已知限制」）。
+
+1. 双击运行 `tools/M5VoiceBridge.exe`（无窗口，后台常驻）
+2. 按住 **A** 开始说话，松开结束
+3. 助手把状态写到同目录的 `M5VoiceBridge.log`
+
+```
+voice: Ctrl+Win down
+voice: Ctrl+Win up
+```
+
+也可以直接用 Python 运行：`python tools/voice_bridge.py`。
+助手会自己扫描并连接设备，断开后每 3 秒重连一次。
+
+**注意**：刚刷完固件后第一次运行助手如果报
+`Characteristic ... was not found`，说明 Windows 的 GATT 服务表还是旧的，
+删除配对重新添加一次即可。
 
 ### 调参
 
@@ -199,6 +219,9 @@ src/
   ble_mouse.cpp      自研 BLE HID 层
 docs/
   touchpad-design.md 触控板设计说明
+tools/
+  voice_bridge.py    语音助手：订阅厂商特征，用 SendInput 合成 Ctrl+Win
+  M5VoiceBridge.exe  打包后的无窗口版（日志写在同目录 M5VoiceBridge.log）
 ```
 
 ---
@@ -209,10 +232,11 @@ docs/
   需要转动手腕（yaw）。这是所有陀螺仪空中鼠标的共同限制。
 - **水平滚动依赖 AC Pan。** Windows 上浏览器、Excel、VS Code 等支持良好；
   资源管理器等部分应用本身不支持水平滚轮，属于应用侧限制。
-- **不支持媒体键（音量/播放）与语音输入（Ctrl+Win）**。两者都必须用键盘或
-  消费级 HID 报告，而这类报告必须引入 Report ID；实测 Windows 会拒绝带
-  Report ID 的描述符（配对与加密都正常，但主机从不订阅报告），
-  详见 [CHANGELOG.md](CHANGELOG.md) 的 v0.2.2 小节。
+- **媒体键（音量/播放）不支持**。它必须用消费级 HID 报告，而这类报告必须引入
+  Report ID；实测 Windows 会拒绝带 Report ID 的描述符（配对与加密都正常，
+  但主机从不订阅报告），详见 [CHANGELOG.md](CHANGELOG.md) 的 v0.2.2 小节。
+- **语音输入依赖电脑端助手常驻**。设备只负责发送「按下/松开」，
+  Ctrl+Win 由助手合成；没有运行助手时按住 A 不会有任何效果。
 - 未实现绝对定位（激光笔式）；水平鼠采用速度映射，因此不需要与主机屏幕标定。
 - BLE 连接间隔由主机协商，间隔过大时指针会显得迟滞。
 - macOS 对 HID 描述符的接受度可能低于 Windows/Linux。

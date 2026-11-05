@@ -4,7 +4,7 @@
 
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32--S3-orange)](https://platformio.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.2-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.4-blue)](CHANGELOG.md)
 
 English | [简体中文](README.zh-CN.md)
 
@@ -40,7 +40,7 @@ as a standard Bluetooth mouse.
   - fast swipe left/right = back / forward
   - **axis lock**: one gesture drives one axis only, so diagonal swipes don't jitter
 - **Five-button mouse**: left / right / middle / back / forward
-- **Drag lock**: double-click to latch the left button, move to drag, click to release
+- **Voice input**: hold A to send Ctrl+Win (for WeChat IME and similar); needs the PC helper running
 - **Freeze** to re-centre the device without moving the cursor
 - **Haptic + audio feedback** on every mode and axis change
 - **On-screen diagnostics**: pairing state, sent-report counter, and a rolling
@@ -102,9 +102,8 @@ pio run -t upload --upload-port COM4
 
 | Action | Function |
 |---|---|
-| **A** short | Left click |
-| **A** double | Latch / release the left button (drag) |
-| **A** long | Hold left button (drag) |
+| **A** short (< 0.35 s) | Left click |
+| **A** hold (≥ 0.35 s) | Voice input: sends Ctrl+Win while held, released on let-go |
 | **B** short | Right click |
 | **B** double | Freeze / unfreeze movement |
 | **B** long | Air Mouse: vertical axis Y/X · Level Mouse: orientation (0–7) |
@@ -132,6 +131,29 @@ swipe will not flicker between horizontal and vertical.
 The gyro pointer resumes **120 ms** after the thumb leaves the screen. Ending a
 flick often flings the finger off; taking over immediately would send the cursor
 flying with the device.
+
+### Voice input
+
+The device sends press/release events over a **vendor-specific BLE
+characteristic**; a small helper on the PC turns them into Ctrl+Win with
+`SendInput`. This sidesteps the HID descriptor limitation described under
+"Known limitations".
+
+1. Run `tools/M5VoiceBridge.exe` (windowless, stays in the background)
+2. Hold **A** to talk, release to stop
+3. The helper writes its state to `M5VoiceBridge.log` next to the exe
+
+```
+voice: Ctrl+Win down
+voice: Ctrl+Win up
+```
+
+You can also run it from source: `python tools/voice_bridge.py`.
+It scans for the device, connects, and reconnects every 3 seconds if dropped.
+
+**Note**: right after flashing new firmware, the helper may report
+`Characteristic ... was not found` on first run — Windows is still serving a
+stale GATT service table. Remove the pairing and add the device again.
 
 ### Tuning
 
@@ -212,6 +234,10 @@ src/
   ble_mouse.cpp      self-contained BLE HID layer
 docs/
   touchpad-design.md touchpad design notes
+tools/
+  voice_bridge.py    voice helper: subscribes to the vendor characteristic,
+                     synthesises Ctrl+Win via SendInput
+  M5VoiceBridge.exe  packaged windowless build (log: M5VoiceBridge.log)
 ```
 
 ---
@@ -224,11 +250,13 @@ docs/
 - **Horizontal scroll relies on AC Pan.** Windows browsers, Excel and VS Code
   support it; File Explorer and some other apps do not support horizontal
   wheels at all — an application-side limitation.
-- **Media keys (volume/play) and voice input (Ctrl+Win) are not supported.**
-  Both require keyboard or consumer HID reports, which in turn require Report
-  IDs; Windows rejects such descriptors on this setup (pairing and encryption
-  succeed, but the host never subscribes). See the v0.2.2 entry in
-  [CHANGELOG.md](CHANGELOG.md).
+- **Media keys (volume/play) are not supported.** They need consumer HID
+  reports, which in turn require Report IDs; Windows rejects such descriptors on
+  this setup (pairing and encryption succeed, but the host never subscribes).
+  See the v0.2.2 entry in [CHANGELOG.md](CHANGELOG.md).
+- **Voice input depends on the PC helper running.** The device only sends
+  press/release; Ctrl+Win is synthesised by the helper. Holding A does nothing
+  when the helper is not running.
 - Absolute (laser-pointer) positioning is not implemented; level mode is
   velocity-based so it needs no calibration against the host screen.
 - The BLE connection interval is negotiated by the host; a very slow interval

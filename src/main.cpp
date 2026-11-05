@@ -364,8 +364,6 @@ void handleButtons() {
       aVoiceStarted = true;
       g_voiceOn = g_mouse.sendControl(sw::kCtrlVoiceDown);
       if (g_voiceOn) {
-        M5.Power.setVibration(255);
-        g_vibUntil = millis() + 200;   // 开始: 长震
         Serial.println("[voice] down");
       }
     } else if (M5.BtnA.wasReleased()) {
@@ -373,8 +371,6 @@ void handleButtons() {
         if (g_voiceOn) {
           g_mouse.sendControl(sw::kCtrlVoiceUp);
           g_voiceOn = false;
-          M5.Power.setVibration(90);
-          g_vibUntil = millis() + 60;  // 结束: 短震
           Serial.println("[voice] up");
         }
       } else if (aDownMs != 0 && millis() - aDownMs < 350) {

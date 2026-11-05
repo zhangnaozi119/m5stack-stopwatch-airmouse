@@ -17,7 +17,10 @@
 
 import asyncio
 import ctypes
+import os
 import sys
+import time
+from pathlib import Path
 
 from bleak import BleakClient, BleakScanner
 
@@ -90,6 +93,31 @@ def _send(vk: int, up: bool) -> None:
 
 _voice_held = False
 
+_LOG_MAX_BYTES = 512 * 1024
+
+
+def _log_path() -> Path:
+    base = Path(sys.executable if getattr(sys, "frozen", False) else __file__)
+    return base.parent / "M5VoiceBridge.log"
+
+
+def say(msg: str) -> None:
+    """无窗口模式没有 stdout，因此同时写日志文件便于事后排查。"""
+    line = "%s %s" % (time.strftime("%H:%M:%S"), msg)
+    if sys.stdout is not None:
+        try:
+            print(line, flush=True)
+        except Exception:
+            pass
+    try:
+        path = _log_path()
+        if path.exists() and path.stat().st_size > _LOG_MAX_BYTES:
+            path.unlink()
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass
+
 
 def voice_down() -> None:
     global _voice_held
@@ -98,7 +126,7 @@ def voice_down() -> None:
     _send(VK_LCONTROL, False)
     _send(VK_LWIN, False)
     _voice_held = True
-    print("voice: Ctrl+Win down")
+    say("voice: Ctrl+Win down")
 
 
 def voice_up() -> None:
@@ -108,7 +136,7 @@ def voice_up() -> None:
     _send(VK_LWIN, True)
     _send(VK_LCONTROL, True)
     _voice_held = False
-    print("voice: Ctrl+Win up")
+    say("voice: Ctrl+Win up")
 
 
 def on_notify(_sender, data: bytearray) -> None:
@@ -123,16 +151,17 @@ def on_notify(_sender, data: bytearray) -> None:
 
 async def main() -> None:
     if sys.platform != "win32":
-        print("This helper only works on Windows.")
+        say("This helper only works on Windows.")
         return
 
     # 打包成 exe 后输出默认是块缓冲的, 重定向到文件时看不到任何日志
-    if hasattr(sys.stdout, "reconfigure"):
+    if sys.stdout is not None and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(line_buffering=True)
+
+    say("helper started, looking for %s" % DEVICE_NAME)
 
     while True:
         try:
-            print("scanning for", DEVICE_NAME, "...")
             device = await BleakScanner.find_device_by_filter(
                 lambda d, adv: (d.name == DEVICE_NAME)
                 or (SERVICE_UUID in (adv.service_uuids or [])),
@@ -141,15 +170,15 @@ async def main() -> None:
             if device is None:
                 continue
 
-            print("connecting to", device.address)
+            say("connecting to %s" % device.address)
             async with BleakClient(device) as client:
                 await client.start_notify(CHAR_UUID, on_notify)
-                print("connected, listening for voice commands")
+                say("connected, listening for voice commands")
                 while client.is_connected:
                     await asyncio.sleep(1)
-            print("disconnected")
+            say("disconnected")
         except Exception as exc:  # 蓝牙掉线、休眠唤醒等都会走到这里
-            print("error:", exc)
+            say("error: %s" % exc)
         finally:
             # 连接断开时必须释放按键，否则 Ctrl+Win 会卡在按下状态
             voice_up()

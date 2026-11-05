@@ -4,7 +4,7 @@
 
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32--S3-orange)](https://platformio.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.2-blue)](CHANGELOG.md)
 
 English | [简体中文](README.zh-CN.md)
 
@@ -35,9 +35,10 @@ as a standard Bluetooth mouse.
   cycled at runtime with a long press of B
 - **Thumb touchpad** (available in both modes)
   - swipe up/down = vertical scroll, with inertia
-  - swipe left/right = horizontal scroll (AC Pan)
+  - swipe left/right = horizontal scroll (AC Pan, with inertia)
   - tap = left click
   - fast swipe left/right = back / forward
+  - **axis lock**: one gesture drives one axis only, so diagonal swipes don't jitter
 - **Five-button mouse**: left / right / middle / back / forward
 - **Drag lock**: double-click to latch the left button, move to drag, click to release
 - **Freeze** to re-centre the device without moving the cursor
@@ -119,13 +120,18 @@ touched**, so scrolling never flings the cursor around.
 | Gesture | Function |
 |---|---|
 | Swipe up / down | Vertical scroll, with inertia after release |
-| Swipe left / right | Horizontal scroll |
+| Swipe left / right | Horizontal scroll, with inertia after release |
 | Tap | Left click |
 | Fast swipe left | Back (browser / File Explorer) |
 | Fast swipe right | Forward |
 
 Slow swipes scroll; fast flicks trigger back/forward. The two are separated by
-instantaneous velocity.
+instantaneous velocity. Once a gesture starts, its axis is locked, so a diagonal
+swipe will not flicker between horizontal and vertical.
+
+The gyro pointer resumes **120 ms** after the thumb leaves the screen. Ending a
+flick often flings the finger off; taking over immediately would send the cursor
+flying with the device.
 
 ### Tuning
 
@@ -137,7 +143,7 @@ Pointer speed lives in `include/air_mouse.h`:
 | `_levelGain` | 60.0 | Level-mode speed (px per degree·s) |
 | `kDeadzoneDps` | 0.8 | Air-mouse dead zone |
 | `kDeadzoneDeg` | 1.5 | Level-mode dead zone |
-| `kLpfAlpha` | 0.35 | Low-pass smoothing |
+| Smoothing | 0.20–0.60 | Adaptive: smoother when slow, more responsive when fast |
 
 Touchpad sensitivity lives in `include/touchpad.h`:
 
@@ -145,8 +151,10 @@ Touchpad sensitivity lives in `include/touchpad.h`:
 |---|---|---|
 | `kScrollStep` | 6.0 | Vertical: pixels per scroll notch (lower = more sensitive) |
 | `kPanStep` | 3.0 | Horizontal: pixels per notch |
-| `kMoveThreshold` | 12.0 | Pixels before a touch counts as a swipe |
-| `kTapMoveMax` | 12.0 | Max travel for a tap; keep equal to the above |
+| `kSwipeThreshold` | 5.0 | Pixels before scrolling starts (lower = snappier) |
+| `kTapMoveMax` | 8.0 | Max travel for a tap |
+| `kAxisLockRatio` | 1.6 | How far the other axis must exceed the locked one to flip |
+| `kMaxStepPerFrame` | 2 | Max scroll notches per frame (prevents jumps after a dropped frame) |
 | `kFlickVx` | 1.8 | Flick velocity threshold (px/ms) |
 | `kFlickDist` | 120.0 | Minimum travel for a flick (px) |
 | `kFlickMaxMs` | 350 | Maximum duration for a flick |
@@ -216,9 +224,11 @@ docs/
 - **Horizontal scroll relies on AC Pan.** Windows browsers, Excel and VS Code
   support it; File Explorer and some other apps do not support horizontal
   wheels at all — an application-side limitation.
-- **Media keys (volume/play) and voice input (Ctrl+Win) are not enabled in this
-  build.** The BLE layer keeps the interfaces but returns false, and no on-screen
-  feedback is shown.
+- **Media keys (volume/play) and voice input (Ctrl+Win) are not supported.**
+  Both require keyboard or consumer HID reports, which in turn require Report
+  IDs; Windows rejects such descriptors on this setup (pairing and encryption
+  succeed, but the host never subscribes). See the v0.2.2 entry in
+  [CHANGELOG.md](CHANGELOG.md).
 - Absolute (laser-pointer) positioning is not implemented; level mode is
   velocity-based so it needs no calibration against the host screen.
 - The BLE connection interval is negotiated by the host; a very slow interval

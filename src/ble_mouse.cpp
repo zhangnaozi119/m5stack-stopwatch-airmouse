@@ -65,7 +65,7 @@ class ServerCB : public NimBLEServerCallbacks {
   void onConnect(NimBLEServer* server, NimBLEConnInfo& connInfo) override {
     _owner->onConnected();
     server->updateConnParams(connInfo.getConnHandle(), 6, 12, 0, 400);
-    if (!_owner->_hasBond) {
+    if (!connInfo.isEncrypted()) {
       int rc = 0;
       NimBLEDevice::startSecurity(connInfo.getConnHandle(), &rc);
       Serial.printf("[ble] 已连接 handle=%u interval=%u 发起配对rc=%d\n",

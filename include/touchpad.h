@@ -37,7 +37,7 @@ class Touchpad {
  private:
   enum class State : uint8_t { Idle, Tracking, VScroll, HScroll };
 
-  void emitScroll(float dx, float dy, TouchOutput& out);
+  void emitScroll(float dx, float dy, int& wheel, int& pan);
   void finishGesture(uint32_t nowMs, TouchOutput& out);
 
   State    _state = State::Idle;
@@ -52,15 +52,19 @@ class Touchpad {
   float _accX = 0, _accY = 0;      ///< 不足一个滚动单位的余量
   float _peakVx = 0;               ///< 水平方向峰值速度 px/ms
 
-  bool     _moved = false;
+  bool     _scrolled = false;      ///< 本次手势实际产生过滚动（用于取消点击）
+  bool     _axisLatched = false;   ///< 轴是否已锁定
+  bool     _latchedH = false;      ///< 锁定的轴：true = 水平
   uint32_t _lastTapMs = 0;         ///< 上一次轻点时刻（判双击）
   const char* _hint = "";
 
   // ---- 阈值 ----
-  static constexpr float kMoveThreshold = 12.0f;   ///< 超过即为滑动
-  static constexpr float kTapMoveMax = 12.0f;      ///< 轻点的最大位移
+  static constexpr float kSwipeThreshold = 5.0f;   ///< 越过即开始滚动（越小越跟手）
+  static constexpr float kTapMoveMax = 8.0f;       ///< 轻点的最大位移
   static constexpr uint32_t kTapMaxMs = 250;       ///< 轻点的最长时长
   static constexpr uint32_t kDoubleTapMs = 320;    ///< 双击间隔上限
+  static constexpr float kAxisLockRatio = 1.6f;    ///< 另一轴超过当前轴多少倍才翻转
+  static constexpr int   kMaxStepPerFrame = 2;     ///< 单帧最多发出的滚动格数
   static constexpr float kScrollStep = 6.0f;       ///< 垂直滚动: 每 6 px 一格
   static constexpr float kPanStep = 3.0f;          ///< 水平滚动: 每 3 px 一格（更灵敏）
   static constexpr float kFlickVx = 1.8f;          ///< 快滑的峰值速度 px/ms

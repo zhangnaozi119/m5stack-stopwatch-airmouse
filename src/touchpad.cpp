@@ -21,14 +21,16 @@ void Touchpad::update(uint32_t nowMs, TouchOutput& out) {
 
   // ---- 按下：进入跟踪
   if (t.wasPressed()) {
-    _state   = State::Tracking;
-    _startMs = _lastMs = nowMs;
-    _startX = _lastX = _x = t.x;
-    _startY = _lastY = _y = t.y;
+    _state       = State::Tracking;
+    _startMs     = _lastMs = nowMs;
+    _startX      = _lastX = _x = t.x;
+    _startY      = _lastY = _y = t.y;
     _totalX = _totalY = _accX = _accY = 0;
-    _peakVx = 0;
-    _moved  = false;
-    _hint   = "轻点=左键  连点两下=双击";
+    _peakVx      = 0;
+    _scrolled    = false;
+    _axisLatched = false;
+    _latchedH    = false;
+    _hint        = "轻点=左键  连点两下=双击";
     return;
   }
 
@@ -52,26 +54,40 @@ void Touchpad::update(uint32_t nowMs, TouchOutput& out) {
     _lastY  = ny;
     _lastMs = nowMs;
 
-    if (std::fabs(_totalX) > kMoveThreshold || std::fabs(_totalY) > kMoveThreshold) {
-      _moved = true;
+    // ---- 轴锁定：首次判定后保持，另一轴要明显超过才允许改判。
+    // 每帧重新比较两轴会让斜滑在手势中途来回翻转，表现为滚动抖动。
+    if (!_axisLatched) {
+      if (std::fabs(_totalX) > kSwipeThreshold ||
+          std::fabs(_totalY) > kSwipeThreshold) {
+        _axisLatched = true;
+        _latchedH    = std::fabs(_totalX) > std::fabs(_totalY);
+      }
+    } else {
+      const float cur   = _latchedH ? std::fabs(_totalX) : std::fabs(_totalY);
+      const float other = _latchedH ? std::fabs(_totalY) : std::fabs(_totalX);
+      if (other > cur * kAxisLockRatio) _latchedH = !_latchedH;
     }
 
-    if (_moved) {
-      const bool horizontal = std::fabs(_totalX) > std::fabs(_totalY);
-      if (horizontal) {
-        _state = State::HScroll;
-        _hint  = "左右滑=水平滚动  快滑=后退/前进";
-      } else {
-        _state = State::VScroll;
-        _hint  = "上下滑=垂直滚动";
-      }
+    if (_axisLatched) {
+      _state = _latchedH ? State::HScroll : State::VScroll;
+      _hint  = _latchedH ? "左右滑=水平滚动  快滑=后退/前进"
+                         : "上下滑=垂直滚动";
+
       // 快滑期间不产生滚动，避免与"后退/前进"叠加。
-      // 必须用"当前帧"速度：用整段手势的峰值会被起手抖动抬高，导致
-      // 整段手势都不滚动（水平方向尤其明显）。
+      // 必须用"当前帧"速度：用整段手势的峰值会因起手抖动而误判。
       const float speed =
-          std::fabs(horizontal ? dx : dy) / static_cast<float>(dt);
+          std::fabs(_latchedH ? dx : dy) / static_cast<float>(dt);
       if (speed < kFlickVx) {
-        emitScroll(dx, dy, out);
+        int w = 0, p = 0;
+        emitScroll(dx, dy, w, p);
+        // 单帧钳制：掉帧攒下的大量位移不要一次性甩出去，否则屏幕上是一次猛跳
+        if (w >  kMaxStepPerFrame) w =  kMaxStepPerFrame;
+        if (w < -kMaxStepPerFrame) w = -kMaxStepPerFrame;
+        if (p >  kMaxStepPerFrame) p =  kMaxStepPerFrame;
+        if (p < -kMaxStepPerFrame) p = -kMaxStepPerFrame;
+        out.wheel += static_cast<int8_t>(w);
+        out.pan   += static_cast<int8_t>(p);
+        if (w != 0 || p != 0) _scrolled = true;
       }
     }
     return;
@@ -86,23 +102,23 @@ void Touchpad::update(uint32_t nowMs, TouchOutput& out) {
   }
 }
 
-void Touchpad::emitScroll(float dx, float dy, TouchOutput& out) {
+void Touchpad::emitScroll(float dx, float dy, int& wheel, int& pan) {
   if (_state == State::VScroll) {
     _accY += dy;
-    while (_accY <= -kScrollStep) { out.wheel += 1; _accY += kScrollStep; }
-    while (_accY >= kScrollStep)  { out.wheel -= 1; _accY -= kScrollStep; }
+    while (_accY <= -kScrollStep) { wheel += 1; _accY += kScrollStep; }
+    while (_accY >= kScrollStep)  { wheel -= 1; _accY -= kScrollStep; }
   } else if (_state == State::HScroll) {
     _accX += dx;
-    while (_accX >= kPanStep)  { out.pan += 1; _accX -= kPanStep; }
-    while (_accX <= -kPanStep) { out.pan -= 1; _accX += kPanStep; }
+    while (_accX >= kPanStep)  { pan += 1; _accX -= kPanStep; }
+    while (_accX <= -kPanStep) { pan -= 1; _accX += kPanStep; }
   }
 }
 
 void Touchpad::finishGesture(uint32_t nowMs, TouchOutput& out) {
   const uint32_t dur = nowMs - _startMs;
 
-  // ---- 轻点 = 左键；连点两下由系统识别为双击
-  if (!_moved && dur < kTapMaxMs &&
+  // ---- 轻点 = 左键；本次手势一旦产生过滚动就不再算轻点
+  if (!_scrolled && dur < kTapMaxMs &&
       std::fabs(_totalX) < kTapMoveMax && std::fabs(_totalY) < kTapMoveMax) {
     out.leftClick = true;
     if (_lastTapMs != 0 && nowMs - _lastTapMs < kDoubleTapMs) {

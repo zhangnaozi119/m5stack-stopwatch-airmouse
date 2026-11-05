@@ -82,6 +82,10 @@ const uint8_t kReportMap[] = {
     0x75, 0x08,        //   Report Size (8)
     0x15, 0x00,        //   Logical Minimum (0)
     0x26, 0x65, 0x00,  //   Logical Maximum (101)
+    // 必须重置 Usage 范围: 否则继承上面的 E0..E7, 而 Logical Max=101,
+    // Windows HID 解析器判定违规 -> Code 10 (设备无法启动)
+    0x19, 0x00,        //   Usage Minimum (0)
+    0x29, 0x65,        //   Usage Maximum (101)
     0x81, 0x00,        //   Input (Data,Array,Abs)
     0xC0,              // End Collection
 };
@@ -247,9 +251,20 @@ bool BleMouse::begin(const char* deviceName, bool forceRepairing) {
 }
 
 void BleMouse::setupAdvertising() {
-  // 显式声明 public 地址: 之前随机地址实验可能让主机记住了
-  // 错误的地址类型, 地址类型不匹配的连接请求设备会静默忽略
-  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_PUBLIC);
+  // 换一个全新的广播地址 (由芯片 MAC 派生, public 类型):
+  // Windows 对旧地址有污染记录（随机地址实验+地址类型混乱），
+  // 新地址让 Windows 把设备当成全新 HID 设备处理。
+  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);  // setOwnAddr 只对 random 类型生效
+  {
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_BT);
+    uint8_t addr[6] = {mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]};
+    addr[0] = (addr[0] ^ 0x77) | 0xC0;  // 测试: 换全新地址排除 GATT 缓存  // 高两位=11 (随机静态地址要求); 与真实/历史地址都不同
+    const bool ok = NimBLEDevice::setOwnAddr(addr);
+    Serial.printf("[ble] 广播地址设置%s: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                  ok ? "成功" : "失败",
+                  addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
+  }
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->setAppearance(HID_MOUSE);
   adv->setName(_name ? _name : "M5 AirMouse");

@@ -150,11 +150,10 @@ bool AirMouse::update(float dtSec, int8_t& dx, int8_t& dy) {
     v = deadzone(v, kDeadzoneDps);
     _lpX = _lpX * (1.0f - kLpfAlpha) + h * kLpfAlpha;
     _lpY = _lpY * (1.0f - kLpfAlpha) + v * kLpfAlpha;
-    // 动态加速: 分别按两轴的速度取增益, 慢速轴保持精调
-    const float gainX = dynamicGain(std::fabs(_lpX));
-    const float gainY = dynamicGain(std::fabs(_lpY));
-    _accumX += (_invertX ? -1.0f : 1.0f) * _lpX * gainX * dtSec;
-    _accumY += -_lpY * gainY * dtSec;
+    // 固定增益: 动态加速在低角速度时把增益降到 8, 导致左右方向
+    // (分解出的角速度偏小) 慢到几乎无响应。恢复固定 22。
+    _accumX += (_invertX ? -1.0f : 1.0f) * _lpX * _gain * dtSec;
+    _accumY += -_lpY * _gain * dtSec;
   } else {
     // ---- 水平仪: 加速度计倾角 (相对进入时的姿态)
     float ax = 0, ay = 0, az = 0;

@@ -259,7 +259,12 @@ void BleMouse::startAdvertising() {
   // 每次断开重连都重新添加会让广播数据累积溢出
   // (E NimBLEAdvertisementData: Cannot add UUID, data length exceeded!)，
   // 广播包里丢掉 HID 服务 UUID 后，主机会连上又立刻断开 (0x213)。
-  NimBLEDevice::getAdvertising()->start();
+  NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
+  adv->setAdvertisingCompleteCallback([](NimBLEAdvertising* a) {
+    Serial.println("[ble] 广播停止, 自动重启");
+    a->start();
+  });
+  adv->start();
 }
 
 bool BleMouse::sendReport(int8_t dx, int8_t dy, int8_t wheel, int8_t pan) {

@@ -4,7 +4,7 @@
 
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32--S3-orange)](https://platformio.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.2-blue)](CHANGELOG.md)
 
 [English](README.md) | 简体中文
 
@@ -32,9 +32,10 @@
 - **水平鼠 8 向校准**（4 种旋转 × 2 种镜像），运行时按 B 长按循环切换
 - **拇指触控板**（两种模式下都可用）
   - 上下滑 = 垂直滚动（带惯性）
-  - 左右滑 = 水平滚动（AC Pan）
+  - 左右滑 = 水平滚动（AC Pan，同样带惯性）
   - 轻点 = 左键
   - 快速左右滑 = 后退 / 前进
+  - **轴锁定**：一个手势内只走一个方向，斜滑不会来回横跳
 - **五键鼠标**：左 / 右 / 中 / 后退 / 前进
 - **拖拽锁定**：双击锁定左键，移动设备即拖拽，再点一下释放
 - **冻结**：重新对中设备时不移动指针
@@ -112,12 +113,16 @@ pio run -t upload --upload-port COM4
 | 手势 | 功能 |
 |---|---|
 | 上下滑 | 垂直滚动，松手后有惯性 |
-| 左右滑 | 水平滚动 |
+| 左右滑 | 水平滚动，松手后有惯性 |
 | 轻点 | 左键单击 |
 | 向左快滑 | 后退（浏览器/资源管理器） |
 | 向右快滑 | 前进 |
 
 「滑动」与「快滑」靠速度区分：慢滑产生滚动，快速甩动产生后退/前进。
+一个手势开始后方向会被锁定，斜着滑也不会在横向和纵向之间来回跳。
+
+拇指离开屏幕后 **120ms** 才恢复陀螺仪指针 —— 甩动滚动结束时手指常是「弹开」
+的，立刻接管指针会跟着设备动一下就飞出去。
 
 ### 调参
 
@@ -129,7 +134,7 @@ pio run -t upload --upload-port COM4
 | `_levelGain` | 60.0 | 水平鼠速度（像素 / 度·秒） |
 | `kDeadzoneDps` | 0.8 | 空中鼠死区 |
 | `kDeadzoneDeg` | 1.5 | 水平鼠死区 |
-| `kLpfAlpha` | 0.35 | 低通平滑系数 |
+| 平滑系数 | 0.20–0.60 | 随角速度自适应：慢速更平滑、快速更跟手 |
 
 **触控板灵敏度**在 `include/touchpad.h`：
 
@@ -137,8 +142,10 @@ pio run -t upload --upload-port COM4
 |---|---|---|
 | `kScrollStep` | 6.0 | 垂直滚动：每 6 px 一格（越小越灵敏） |
 | `kPanStep` | 3.0 | 水平滚动：每 3 px 一格 |
-| `kMoveThreshold` | 12.0 | 超过多少像素才算滑动（越小滚动启动越快） |
-| `kTapMoveMax` | 12.0 | 轻点允许的最大位移，应与上一项保持一致 |
+| `kSwipeThreshold` | 5.0 | 越过多少像素开始滚动（越小越跟手） |
+| `kTapMoveMax` | 8.0 | 轻点允许的最大位移 |
+| `kAxisLockRatio` | 1.6 | 另一轴超过当前轴多少倍才允许改判轴向 |
+| `kMaxStepPerFrame` | 2 | 单帧最多发出的滚动格数（掉帧时防猛跳） |
 | `kFlickVx` | 1.8 | 快滑的瞬时速度阈值（px/ms） |
 | `kFlickDist` | 120.0 | 快滑的最小位移（px） |
 | `kFlickMaxMs` | 350 | 快滑的最长时长 |
@@ -202,8 +209,10 @@ docs/
   需要转动手腕（yaw）。这是所有陀螺仪空中鼠标的共同限制。
 - **水平滚动依赖 AC Pan。** Windows 上浏览器、Excel、VS Code 等支持良好；
   资源管理器等部分应用本身不支持水平滚轮，属于应用侧限制。
-- 本版本的**媒体键（音量/播放）与语音输入（Ctrl+Win）尚未启用**，
-  BLE 层保留了接口但返回 false，屏幕上不会出现相关反馈。
+- **不支持媒体键（音量/播放）与语音输入（Ctrl+Win）**。两者都必须用键盘或
+  消费级 HID 报告，而这类报告必须引入 Report ID；实测 Windows 会拒绝带
+  Report ID 的描述符（配对与加密都正常，但主机从不订阅报告），
+  详见 [CHANGELOG.md](CHANGELOG.md) 的 v0.2.2 小节。
 - 未实现绝对定位（激光笔式）；水平鼠采用速度映射，因此不需要与主机屏幕标定。
 - BLE 连接间隔由主机协商，间隔过大时指针会显得迟滞。
 - macOS 对 HID 描述符的接受度可能低于 Windows/Linux。

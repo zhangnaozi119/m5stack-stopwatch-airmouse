@@ -71,7 +71,8 @@ class BleMouse {
   void tick();
 
   // 供 NimBLE 回调使用
-  bool          _expectPairing = true;   ///< 连接后是否需主动发起配对（回调访问）
+  bool          _expectPairing = true;
+  volatile bool _hasBond = false;   ///< 设备侧是否已有绑定   ///< 连接后是否需主动发起配对（回调访问）
   void onConnected();
   void onDisconnected();
   void onAuthenticated(bool encrypted);

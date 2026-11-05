@@ -61,7 +61,7 @@ class Touchpad {
   static constexpr float kTapMoveMax = 12.0f;      ///< 轻点的最大位移
   static constexpr uint32_t kTapMaxMs = 250;       ///< 轻点的最长时长
   static constexpr uint32_t kDoubleTapMs = 320;    ///< 双击间隔上限
-  static constexpr float kScrollStep = 12.0f;      ///< 每 12 px 滚动一格
+  static constexpr float kScrollStep = 6.0f;       ///< 每 6 px 滚动一格（提高灵敏度）
   static constexpr float kFlickVx = 1.8f;          ///< 快滑的峰值速度 px/ms
   static constexpr float kFlickDist = 120.0f;      ///< 快滑的最小位移
   static constexpr uint32_t kFlickMaxMs = 350;     ///< 快滑的最长时长

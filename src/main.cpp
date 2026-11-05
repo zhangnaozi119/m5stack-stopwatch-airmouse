@@ -506,6 +506,20 @@ void loop() {
   g_touchpad.update(nowMs, to);
   g_touchActive = g_touchpad.active();
 
+  // 诊断: 触摸状态与输出
+  {
+    static uint32_t lastTp = 0;
+    auto& td = M5.Touch.getDetail();
+    if (millis() - lastTp >= 200) {
+      lastTp = millis();
+      if (td.isPressed() || to.wheel || to.pan) {
+        Serial.printf("[tp] pressed=%d x=%d y=%d wheel=%d pan=%d active=%d\n",
+                      td.isPressed() ? 1 : 0, td.x, td.y, to.wheel, to.pan,
+                      g_touchActive ? 1 : 0);
+      }
+    }
+  }
+
   // ---- 语音输入: A 按住 + 拇指按屏 0.5s 不动 = Ctrl+Win 按住
   if (aHeld && !g_voiceAWasHeld) {
     // A 刚按下: 复位时间窗
@@ -572,7 +586,7 @@ void loop() {
       }
       g_lastScrollMs = nowMs;
     } else if (to.pan != 0) {
-      g_mouse.move(0, 0, to.wheel, to.pan);
+      g_mouse.move(0, 0, 0, to.pan);
       ++g_sentCount;
     } else {
       // 无手指输入时推进惯性

@@ -156,6 +156,17 @@ bool BleMouse::begin(const char* deviceName, bool /*forceRepairing*/) {
 }
 
 void BleMouse::setupAdvertising() {
+  // 换全新广播地址: 强制主机重新做服务发现 (否则会沿用缓存的旧描述符)
+  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
+  {
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_BT);
+    uint8_t addr[6] = {mac[5], mac[4], mac[3], mac[2], mac[1], mac[0]};
+    addr[0] = (addr[0] ^ 0x99) | 0xC0;
+    NimBLEDevice::setOwnAddr(addr);
+    Serial.printf("[ble] 广播地址: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                  addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
+  }
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->setAppearance(HID_MOUSE);
   adv->setName(_name ? _name : "M5 AirMouse");
@@ -185,7 +196,17 @@ bool BleMouse::sendReport(int8_t dx, int8_t dy, int8_t wheel, int8_t pan) {
       static_cast<uint8_t>(wheel),
       static_cast<uint8_t>(pan),
   };
-  return _input->notify(report, sizeof(report));
+  const bool ok = _input->notify(report, sizeof(report));
+  // 诊断: 打印非零报告 (定位手势是否发出)
+  if (dx || dy || wheel || pan || _buttons) {
+    static uint32_t lastLog = 0;
+    if (millis() - lastLog >= 60) {
+      lastLog = millis();
+      Serial.printf("[rep] %02X %02X %02X %02X %02X\n",
+                    report[0], report[1], report[2], report[3], report[4]);
+    }
+  }
+  return ok;
 }
 
 bool BleMouse::move(int8_t dx, int8_t dy, int8_t wheel, int8_t pan) {

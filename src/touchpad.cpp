@@ -57,15 +57,20 @@ void Touchpad::update(uint32_t nowMs, TouchOutput& out) {
     }
 
     if (_moved) {
-      if (std::fabs(_totalX) > std::fabs(_totalY)) {
+      const bool horizontal = std::fabs(_totalX) > std::fabs(_totalY);
+      if (horizontal) {
         _state = State::HScroll;
         _hint  = "左右滑=水平滚动  快滑=后退/前进";
       } else {
         _state = State::VScroll;
         _hint  = "上下滑=垂直滚动";
       }
-      // 快滑期间不产生滚动，避免与"后退/前进"叠加
-      if (_peakVx < kFlickVx) {
+      // 快滑期间不产生滚动，避免与"后退/前进"叠加。
+      // 必须用"当前帧"速度：用整段手势的峰值会被起手抖动抬高，导致
+      // 整段手势都不滚动（水平方向尤其明显）。
+      const float speed =
+          std::fabs(horizontal ? dx : dy) / static_cast<float>(dt);
+      if (speed < kFlickVx) {
         emitScroll(dx, dy, out);
       }
     }
@@ -88,8 +93,8 @@ void Touchpad::emitScroll(float dx, float dy, TouchOutput& out) {
     while (_accY >= kScrollStep)  { out.wheel -= 1; _accY -= kScrollStep; }
   } else if (_state == State::HScroll) {
     _accX += dx;
-    while (_accX >= kScrollStep)  { out.pan += 1; _accX -= kScrollStep; }
-    while (_accX <= -kScrollStep) { out.pan -= 1; _accX += kScrollStep; }
+    while (_accX >= kPanStep)  { out.pan += 1; _accX -= kPanStep; }
+    while (_accX <= -kPanStep) { out.pan -= 1; _accX += kPanStep; }
   }
 }
 

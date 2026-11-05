@@ -349,22 +349,39 @@ void handleButtons() {
   }
   if (millis() < g_suppressUntil) return;
 
-  // A: 按住 = 语音输入 (Ctrl+Win 按住), 松开即结束。
-  // 屏幕已能完成单击/双击, A 不再承担鼠标按键。
-  if (M5.BtnA.wasPressed()) {
-    g_voiceOn = g_mouse.sendControl(sw::kCtrlVoiceDown);
-    if (g_voiceOn) {
-      M5.Power.setVibration(255);
-      g_vibUntil = millis() + 200;   // 开始: 长震
-      Serial.println("[voice] down");
-    }
-  } else if (M5.BtnA.wasReleased()) {
-    if (g_voiceOn) {
-      g_mouse.sendControl(sw::kCtrlVoiceUp);
-      g_voiceOn = false;
-      M5.Power.setVibration(90);
-      g_vibUntil = millis() + 60;    // 结束: 短震
-      Serial.println("[voice] up");
+  // A: 短按 = 左键单击; 按住 >=350ms = 语音输入 (Ctrl+Win 按住), 松开结束。
+  // 语音命令走厂商特征, 需要 PC 端 tools/voice_bridge.py 在跑; 没有助手时
+  // 按住 A 不会有任何动作 (不会误点)。
+  {
+    static uint32_t aDownMs = 0;
+    static bool     aVoiceStarted = false;
+
+    if (M5.BtnA.wasPressed()) {
+      aDownMs = millis();
+      aVoiceStarted = false;
+    } else if (M5.BtnA.isPressed() && !aVoiceStarted && aDownMs != 0 &&
+               millis() - aDownMs >= 350) {
+      aVoiceStarted = true;
+      g_voiceOn = g_mouse.sendControl(sw::kCtrlVoiceDown);
+      if (g_voiceOn) {
+        M5.Power.setVibration(255);
+        g_vibUntil = millis() + 200;   // 开始: 长震
+        Serial.println("[voice] down");
+      }
+    } else if (M5.BtnA.wasReleased()) {
+      if (aVoiceStarted) {
+        if (g_voiceOn) {
+          g_mouse.sendControl(sw::kCtrlVoiceUp);
+          g_voiceOn = false;
+          M5.Power.setVibration(90);
+          g_vibUntil = millis() + 60;  // 结束: 短震
+          Serial.println("[voice] up");
+        }
+      } else if (aDownMs != 0 && millis() - aDownMs < 350) {
+        g_mouse.click(sw::kBtnLeft);   // 短按: 左键单击
+      }
+      aDownMs = 0;
+      aVoiceStarted = false;
     }
   }
 

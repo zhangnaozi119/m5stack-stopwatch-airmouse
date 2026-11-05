@@ -64,6 +64,26 @@ const uint8_t kReportMap[] = {
     0x75, 0x10,        //   Report Size (16)
     0x81, 0x00,        //   Input (Data,Array,Abs)
     0xC0,              // End Collection
+
+    // ---- 键盘报告 (Report ID 3): 修饰键 + 6 键位槽
+    0x05, 0x01,        // Usage Page (Generic Desktop)
+    0x09, 0x06,        // Usage (Keyboard)
+    0xA1, 0x01,        // Collection (Application)
+    0x85, 0x03,        //   Report ID (3)
+    0x05, 0x07,        //   Usage Page (Key Codes)
+    0x19, 0xE0,        //   Usage Minimum (E0 LeftCtrl)
+    0x29, 0xE7,        //   Usage Maximum (E7 RightGui)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x25, 0x01,        //   Logical Maximum (1)
+    0x75, 0x01,        //   Report Size (1)
+    0x95, 0x08,        //   Report Count (8)
+    0x81, 0x02,        //   Input (Data,Var,Abs)
+    0x95, 0x06,        //   Report Count (6)
+    0x75, 0x08,        //   Report Size (8)
+    0x15, 0x00,        //   Logical Minimum (0)
+    0x26, 0x65, 0x00,  //   Logical Maximum (101)
+    0x81, 0x00,        //   Input (Data,Array,Abs)
+    0xC0,              // End Collection
 };
 
 // 常用 Consumer 键值 (HID Consumer Page)
@@ -187,6 +207,19 @@ bool BleMouse::begin(const char* deviceName, bool forceRepairing) {
     if (mref != nullptr) mref->setValue(mrefVal, sizeof(mrefVal));
     const uint8_t midle[3] = {0x02, 0x00, 0x00};
     _media->setValue(midle, sizeof(midle));
+
+  // 键盘报告特征 (Report ID 3)
+  _kbd = _hid->getHidService()->createCharacteristic(
+      NimBLEUUID(static_cast<uint16_t>(0x2A4D)),
+      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+  if (_kbd != nullptr) {
+    NimBLEDescriptor* kref = _kbd->createDescriptor(
+        NimBLEUUID(static_cast<uint16_t>(0x2908)), NIMBLE_PROPERTY::READ);
+    const uint8_t krefVal[2] = {0x03, 0x01};
+    if (kref != nullptr) kref->setValue(krefVal, sizeof(krefVal));
+    const uint8_t kidle[8] = {0x03, 0, 0, 0, 0, 0, 0, 0};
+    _kbd->setValue(kidle, sizeof(kidle));
+  }
   }
 
   const uint8_t idle[6] = {0x01, 0, 0, 0, 0, 0};
@@ -241,6 +274,12 @@ bool BleMouse::sendReport(int8_t dx, int8_t dy, int8_t wheel, int8_t pan) {
       static_cast<uint8_t>(pan),
   };
   return _input->notify(report, sizeof(report));
+}
+
+bool BleMouse::sendKeyboardModifiers(uint8_t mods) {
+  if (!_connected || _kbd == nullptr) return false;
+  uint8_t report[8] = {0x03, mods, 0, 0, 0, 0, 0, 0};
+  return _kbd->notify(report, sizeof(report));
 }
 
 bool BleMouse::sendConsumer(uint16_t code) {

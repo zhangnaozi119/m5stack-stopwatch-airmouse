@@ -44,6 +44,7 @@ AppMode       g_appMode = AppMode::Air;
 
 bool     g_holdLeft = false;
 bool     g_dragLock = false;   ///< 双击拖拽锁定 (drag lock)
+bool     g_voiceOn = false;    ///< 语音输入进行中 (Ctrl+Win 已按下)
 
 // 省电状态机: 无输入 5 分钟降亮 + IMU 降频; 30 分钟深度睡眠
 uint32_t g_lastActivityMs = 0;
@@ -403,7 +404,7 @@ void handleButtons() {
     g_air.resetAccum();
     M5.Speaker.tone(g_frozen ? 600 : 900, 60, 0, true);
   } else if (M5.BtnB.wasSingleClicked()) {
-    g_mouse.click(sw::kBtnRight);
+    if (!g_voiceOn) g_mouse.click(sw::kBtnRight);
   }
 }
 
@@ -494,11 +495,33 @@ void loop() {
   // 拇指按住屏幕期间暂停 IMU 指针，避免滚动的同时指针乱飞。
   // A 键按住 + 拇指手势 = 媒体层 (音量/播放)
   const bool mediaMode = M5.BtnA.isPressed();
+  // B 键按住 + 拇指按屏 = 语音输入 (Ctrl+Win 按住, 松手结束)
+  const bool voiceMode = M5.BtnB.isPressed();
   sw::TouchOutput to;
   g_touchpad.update(nowMs, to);
   g_touchActive = g_touchpad.active();
 
-  if (mediaMode) {
+  // ---- 语音输入: B 按住 + 拇指按屏 = Ctrl+Win 按住, 任一松开结束
+  if (voiceMode && g_touchActive) {
+    if (!g_voiceOn) {
+      g_voiceOn = g_mouse.voiceStart();
+      if (g_voiceOn) {
+        M5.Power.setVibration(255);
+        g_vibUntil = nowMs + 200;   // 开始: 长震
+        Serial.println("[voice] Ctrl+Win down");
+      }
+    }
+    // 语音期间丢弃其它手势输出
+    to = sw::TouchOutput{};
+  } else if (g_voiceOn) {
+    g_mouse.voiceStop();
+    g_voiceOn = false;
+    M5.Power.setVibration(90);
+    g_vibUntil = nowMs + 60;        // 结束: 短震
+    Serial.println("[voice] modifiers up");
+  }
+
+  if (mediaMode && !g_voiceOn) {
     // 媒体模式: 滚动转音量, 轻点转播放/暂停
     if (to.wheel != 0) {
       // 连续调节: 每 2 格一档, 音量键是增量式的

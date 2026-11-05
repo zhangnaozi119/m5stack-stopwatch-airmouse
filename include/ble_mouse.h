@@ -47,6 +47,14 @@ class BleMouse {
   /// 发送一个 Consumer 键（音量/播放/亮度等），自动带按下+释放
   bool sendConsumer(uint16_t code);
 
+  /// 发送键盘修饰键（按住/释放）。位: bit0=LCtrl bit1=LShift bit2=LAlt bit3=LWin
+  bool sendKeyboardModifiers(uint8_t mods);
+
+  /// Ctrl+Win 按下（语音输入开始）
+  bool voiceStart() { return sendKeyboardModifiers(0x09); }
+  /// 全部修饰键释放（语音输入结束）
+  bool voiceStop()  { return sendKeyboardModifiers(0x00); }
+
   /// 直接设置按键并立即上报
   void setButtons(uint8_t mask);
 
@@ -80,6 +88,7 @@ class BleMouse {
   NimBLEHIDDevice*      _hid = nullptr;
   NimBLECharacteristic* _input = nullptr;
   NimBLECharacteristic* _media = nullptr;
+  NimBLECharacteristic* _kbd = nullptr;
   const char*           _name = nullptr;
 
   volatile bool _connected = false;

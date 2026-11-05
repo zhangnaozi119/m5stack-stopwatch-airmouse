@@ -37,9 +37,13 @@ sw::AirMouse  g_air;
 sw::Touchpad  g_touchpad;
 
 // 滚动惯性: 快滑/快滚后按衰减继续滚, Mac 触控板手感
-float    g_scrollVel = 0;      ///< 最近滚动速度
+float    g_scrollVel = 0;      ///< 垂直滚动速度 (格/秒)
+float    g_panVel = 0;         ///< 水平滚动速度 (格/秒)
 uint32_t g_lastScrollMs = 0;
+uint32_t g_lastPanMs = 0;
 bool          g_touchActive = false;  ///< 拇指正按在屏幕上
+bool          g_touchWasActive = false;
+uint32_t      g_touchReleaseMs = 0;   ///< 拇指离开屏幕的时刻
 AppMode       g_appMode = AppMode::Air;
 
 bool     g_holdLeft = false;
@@ -505,6 +509,8 @@ void loop() {
   sw::TouchOutput to;
   g_touchpad.update(nowMs, to);
   g_touchActive = g_touchpad.active();
+  if (g_touchWasActive && !g_touchActive) g_touchReleaseMs = nowMs;
+  g_touchWasActive = g_touchActive;
 
   // 诊断: 触摸状态与输出
   {
@@ -576,20 +582,27 @@ void loop() {
     }
   } else {
     // 滚动 + 惯性
-    if (to.wheel != 0) {
-      g_mouse.move(0, 0, to.wheel, to.pan);
-      ++g_sentCount;
-      // 记录滚动速度 (格/秒), 供惯性使用
-      const uint32_t dt = nowMs - g_lastScrollMs;
-      if (dt > 0 && dt < 200) {
-        g_scrollVel = g_scrollVel * 0.5f + (to.wheel * 1000.0f / dt) * 0.5f;
+    if (to.wheel != 0 || to.pan != 0) {
+      if (to.wheel != 0) {
+        g_mouse.move(0, 0, to.wheel, 0);
+        // 记录滚动速度 (格/秒), 供惯性使用
+        const uint32_t dt = nowMs - g_lastScrollMs;
+        if (dt > 0 && dt < 200) {
+          g_scrollVel = g_scrollVel * 0.5f + (to.wheel * 1000.0f / dt) * 0.5f;
+        }
+        g_lastScrollMs = nowMs;
       }
-      g_lastScrollMs = nowMs;
-    } else if (to.pan != 0) {
-      g_mouse.move(0, 0, 0, to.pan);
+      if (to.pan != 0) {
+        g_mouse.move(0, 0, 0, to.pan);
+        const uint32_t dt = nowMs - g_lastPanMs;
+        if (dt > 0 && dt < 200) {
+          g_panVel = g_panVel * 0.5f + (to.pan * 1000.0f / dt) * 0.5f;
+        }
+        g_lastPanMs = nowMs;
+      }
       ++g_sentCount;
     } else {
-      // 无手指输入时推进惯性
+      // 无手指输入时推进惯性 (垂直 / 水平各自独立)
       if (std::fabs(g_scrollVel) > 2.0f && nowMs - g_lastScrollMs >= 30) {
         const int8_t coast = static_cast<int8_t>(
             g_scrollVel * 0.03f > 0 ? std::ceil(g_scrollVel * 0.03f)
@@ -605,13 +618,32 @@ void loop() {
       } else if (nowMs - g_lastScrollMs > 300) {
         g_scrollVel = 0;  // 停顿 300ms 后取消惯性
       }
+
+      if (std::fabs(g_panVel) > 2.0f && nowMs - g_lastPanMs >= 30) {
+        const int8_t coast = static_cast<int8_t>(
+            g_panVel * 0.03f > 0 ? std::ceil(g_panVel * 0.03f)
+                                 : std::floor(g_panVel * 0.03f));
+        if (coast != 0) {
+          g_mouse.move(0, 0, 0, coast);
+          ++g_sentCount;
+          g_panVel *= 0.92f;
+          g_lastPanMs = nowMs;
+        } else {
+          g_panVel = 0;
+        }
+      } else if (nowMs - g_lastPanMs > 300) {
+        g_panVel = 0;
+      }
     }
-    if (to.leftClick)  { g_mouse.click(sw::kBtnLeft); g_scrollVel = 0; }
-    if (to.back)       { g_mouse.click(sw::kBtnBack); g_scrollVel = 0; }
-    if (to.forward)    { g_mouse.click(sw::kBtnForward); g_scrollVel = 0; }
+    if (to.leftClick)  { g_mouse.click(sw::kBtnLeft);    g_scrollVel = 0; g_panVel = 0; }
+    if (to.back)       { g_mouse.click(sw::kBtnBack);    g_scrollVel = 0; g_panVel = 0; }
+    if (to.forward)    { g_mouse.click(sw::kBtnForward); g_scrollVel = 0; g_panVel = 0; }
   }
 
-  if (g_air.calibrated() && g_mouse.isConnected() && !g_frozen && !g_touchActive) {
+  // 拇指离开后 120ms 才恢复指针: 甩手滚动结束时手指常是"弹开"的,
+  // 设备会被带得动一下, 立刻接管指针就会飞。
+  const bool ptrHold = g_touchActive || (nowMs - g_touchReleaseMs) < 120;
+  if (g_air.calibrated() && g_mouse.isConnected() && !g_frozen && !ptrHold) {
     // 采样: 高频读取传感器, 保证不丢动作
     const uint32_t imuInterval = g_powerSave ? 32 : 8;
     if (nowMs - g_lastImuMs >= imuInterval) {

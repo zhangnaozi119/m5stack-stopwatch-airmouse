@@ -20,6 +20,18 @@ float clampf(float v, float lo, float hi) {
   return v < lo ? lo : (v > hi ? hi : v);
 }
 
+/// 速度自适应平滑: 慢速时更平滑(抑制手抖放大), 快速时更跟手(减少延迟)
+float adaptiveAlpha(float h, float v) {
+  static constexpr float kAlphaLow  = 0.20f;  ///< 慢速
+  static constexpr float kAlphaHigh = 0.60f;  ///< 快速
+  static constexpr float kSpeedLo   = 10.0f;  ///< 低于此速度全用低速平滑
+  static constexpr float kSpeedHi   = 120.0f; ///< 高于此速度全用高速平滑
+
+  const float speed = std::sqrt(h * h + v * v);
+  const float t = clampf((speed - kSpeedLo) / (kSpeedHi - kSpeedLo), 0.0f, 1.0f);
+  return kAlphaLow + (kAlphaHigh - kAlphaLow) * t;
+}
+
 int8_t clampStep(float v) {
   if (v > 127.0f) v = 127.0f;
   if (v < -127.0f) v = -127.0f;
@@ -148,8 +160,9 @@ bool AirMouse::update(float dtSec, int8_t& dx, int8_t& dy) {
     _lastV = v;
     h = deadzone(h, kDeadzoneDps);
     v = deadzone(v, kDeadzoneDps);
-    _lpX = _lpX * (1.0f - kLpfAlpha) + h * kLpfAlpha;
-    _lpY = _lpY * (1.0f - kLpfAlpha) + v * kLpfAlpha;
+    const float alpha = adaptiveAlpha(h, v);
+    _lpX = _lpX * (1.0f - alpha) + h * alpha;
+    _lpY = _lpY * (1.0f - alpha) + v * alpha;
     // 固定增益: 动态加速在低角速度时把增益降到 8, 导致左右方向
     // (分解出的角速度偏小) 慢到几乎无响应。恢复固定 22。
     _accumX += (_invertX ? -1.0f : 1.0f) * _lpX * _gain * dtSec;
@@ -176,8 +189,9 @@ bool AirMouse::update(float dtSec, int8_t& dx, int8_t& dy) {
 
     rx = deadzone(rx, kDeadzoneDeg);
     ry = deadzone(ry, kDeadzoneDeg);
-    _lpX = _lpX * (1.0f - kLpfAlpha) + rx * kLpfAlpha;
-    _lpY = _lpY * (1.0f - kLpfAlpha) + ry * kLpfAlpha;
+    const float alpha = adaptiveAlpha(rx, ry);
+    _lpX = _lpX * (1.0f - alpha) + rx * alpha;
+    _lpY = _lpY * (1.0f - alpha) + ry * alpha;
     _accumX += (_levelMirror ? -1.0f : 1.0f) * _lpX * _levelGain * dtSec;
     _accumY += -_lpY * _levelGain * dtSec;
   }

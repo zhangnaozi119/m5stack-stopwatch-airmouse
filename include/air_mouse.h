@@ -103,7 +103,6 @@ class AirMouse {
 
   static constexpr float kDeadzoneDps = 0.8f;   ///< 飞鼠死区
   static constexpr float kDeadzoneDeg = 1.5f;   ///< 水平仪死区
-  static constexpr float kLpfAlpha   = 0.35f;
   static constexpr float kMaxStep    = 40.0f;
   static constexpr float kMaxTiltDeg = 30.0f;   ///< 倾角上限
   static constexpr uint16_t kCalSamples = 30;

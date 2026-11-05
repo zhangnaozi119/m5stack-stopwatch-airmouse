@@ -1,0 +1,21 @@
+[   384][I][esp32-hal-psram.c:96] psramInit(): PSRAM enabled
+[   405][I][M5GFX.cpp:1049] init_impl(): [M5GFX] [Autodetect] load from NVS : board:30
+[   416][I][esp32-hal-i2c.c:75] i2cInit(): Initialising I2C Master: sda=47 scl=48 freq=100000
+[   428][I][M5GFX.cpp:2039] autodetect(): [M5GFX] [Autodetect] board_M5StopWatch
+[   631][I][esp32-hal-i2c.c:75] i2cInit(): Initialising I2C Master: sda=47 scl=48 freq=100000
+[   640][I][esp32-hal-i2c.c:75] i2cInit(): Initialising I2C Master: sda=47 scl=48 freq=100000
+[   722][I][esp32-hal-i2c.c:75] i2cInit(): Initialising I2C Master: sda=47 scl=48 freq=100000
+[   733][I][esp32-hal-i2c.c:75] i2cInit(): Initialising I2C Master: sda=47 scl=48 freq=100000
+[airmouse] M5AirMouse v0.5.1 reset_reason=0
+E NimBLEDevice: esp_ble_tx_power_set: rc=-1
+E NimBLEDevice: esp_ble_tx_power_set: rc=-1
+E NimBLEDevice: esp_ble_tx_power_set: rc=-1
+I NimBLEDevice: NimBLE Started!
+I NimBLEDevice: NimBle host synced.
+[ble] 已有配对记录，等待主机重连
+[ble] 广播中: M5 AirMouse
+[ble] GATT: hidSvc=19 hidInfo=21 reportMap=23 control=25 input=29
+[airmouse] HID 已启动
+[dbg] cal=1 conn=0 mode=0 okA=0 okG=1 A(0.68,-0.11,0.74) G(-0.6,0.6,0.1) HV(0.0,0.0) peakG=1.9 peakHV=0.0/0.0 sent=0
+[dbg] cal=1 conn=0 mode=0 okA=0 okG=1 A(0.68,-0.11,0.74) G(-0.9,-0.4,0.1) HV(0.0,0.0) peakG=1.7 peakHV=0.0/0.0 sent=0
+[dbg] cal=1 conn=0 mode=0 okA=0 okG=1 A(0.68,-0.11,0.74) G(-0.9,-0.1,0.0) HV(0.0,0.0) peakG=10.4 peakHV=0.0/0.0 sent=0

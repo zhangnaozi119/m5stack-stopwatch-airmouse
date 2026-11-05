@@ -432,7 +432,7 @@ void setup() {
   g_air.begin();
   g_lastActivityMs = millis();
 
-  g_mouse.setTxPower(3);
+
   if (!g_mouse.begin(kDeviceName)) {
     Serial.println("[airmouse] BLE 初始化失败");
   }

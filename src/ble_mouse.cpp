@@ -167,7 +167,8 @@ bool BleMouse::begin(const char* deviceName, bool forceRepairing) {
     Serial.println("[ble] 已有配对记录，等待主机重连");
   }
 
-  NimBLEDevice::setPower(ESP_PWR_LVL_P3);
+  // setPower(P3) 已移除: ESP32-S3 上返回 rc=-1 (参数非法), 疑似射频异常源
+
   NimBLEDevice::setSecurityAuth(BLE_SM_PAIR_AUTHREQ_BOND | BLE_SM_PAIR_AUTHREQ_SC);
   NimBLEDevice::setSecurityIOCap(BLE_HS_IO_NO_INPUT_OUTPUT);
 
@@ -246,12 +247,18 @@ bool BleMouse::begin(const char* deviceName, bool forceRepairing) {
 }
 
 void BleMouse::setupAdvertising() {
+  // 显式声明 public 地址: 之前随机地址实验可能让主机记住了
+  // 错误的地址类型, 地址类型不匹配的连接请求设备会静默忽略
+  NimBLEDevice::setOwnAddrType(BLE_OWN_ADDR_PUBLIC);
   NimBLEAdvertising* adv = NimBLEDevice::getAdvertising();
   adv->setAppearance(HID_MOUSE);
   adv->setName(_name ? _name : "M5 AirMouse");
   // 只放 HID 服务 UUID：31 字节广播包放不下 HID + 电池两个 UUID 加名字。
   adv->addServiceUUID(_hid->getHidService()->getUUID());
   adv->enableScanResponse(true);
+  // 关键: 显式关闭白名单过滤。有绑定记录时连接请求若被白名单拒绝,
+  // 设备端完全无感知 (onConnect 不触发), 主机却显示"已连接"。
+  adv->setScanFilter(false, false);
 }
 
 void BleMouse::startAdvertising() {

@@ -32,6 +32,10 @@ constexpr uint8_t kBtnMiddle  = 0x04;
 constexpr uint8_t kBtnBack    = 0x08;
 constexpr uint8_t kBtnForward = 0x10;
 
+/// 自定义控制命令（通过厂商特征发给 PC 端助手，不经过 HID）
+constexpr uint8_t kCtrlVoiceDown = 0x01;  ///< 开始语音（Ctrl+Win 按住）
+constexpr uint8_t kCtrlVoiceUp   = 0x00;  ///< 结束语音（释放修饰键）
+
 class BleMouse {
  public:
   /// 初始化 BLE 栈、HID 服务并开始广播
@@ -44,16 +48,9 @@ class BleMouse {
   /// 发送一次相对位移（带上当前按键状态）
   bool move(int8_t dx, int8_t dy, int8_t wheel = 0, int8_t pan = 0);
 
-  /// 发送一个 Consumer 键（音量/播放/亮度等），自动带按下+释放
-  bool sendConsumer(uint16_t code);
-
-  /// 发送键盘修饰键（按住/释放）。位: bit0=LCtrl bit1=LShift bit2=LAlt bit3=LWin
-  bool sendKeyboardModifiers(uint8_t mods);
-
-  /// Ctrl+Win 按下（语音输入开始）
-  bool voiceStart() { return sendKeyboardModifiers(0x09); }
-  /// 全部修饰键释放（语音输入结束）
-  bool voiceStop()  { return sendKeyboardModifiers(0x00); }
+  /// 发送自定义控制命令（语音等）。走厂商特征 + PC 端助手，
+  /// 不经过 HID 描述符，因此不需要重新配对。
+  bool sendControl(uint8_t cmd);
 
   /// 直接设置按键并立即上报
   void setButtons(uint8_t mask);
@@ -88,8 +85,7 @@ class BleMouse {
   NimBLEServer*         _server = nullptr;
   NimBLEHIDDevice*      _hid = nullptr;
   NimBLECharacteristic* _input = nullptr;
-  NimBLECharacteristic* _media = nullptr;
-  NimBLECharacteristic* _kbd = nullptr;
+  NimBLECharacteristic* _ctrl = nullptr;   ///< 厂商自定义控制命令特征
   const char*           _name = nullptr;
 
   volatile bool _connected = false;

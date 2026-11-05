@@ -142,6 +142,19 @@ bool BleMouse::begin(const char* deviceName, bool /*forceRepairing*/) {
   const uint8_t idle[5] = {0, 0, 0, 0, 0};
   _input->setValue(idle, sizeof(idle));
 
+  // 厂商自定义服务: 供 PC 端助手订阅 (语音输入等 HID 做不到的事)
+  NimBLEService* ctrlSvc = _server->createService(
+      NimBLEUUID("6d3578a0-1e2b-4c3d-9f4a-8b7c6d5e4f01"));
+  _ctrl = ctrlSvc->createCharacteristic(
+      NimBLEUUID("6d3578a1-1e2b-4c3d-9f4a-8b7c6d5e4f01"),
+      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
+  if (_ctrl == nullptr) {
+    Serial.println("[ble] 控制特征创建失败");
+    return false;
+  }
+  const uint8_t ctrlIdle = kCtrlVoiceUp;
+  _ctrl->setValue(&ctrlIdle, 1);
+
   _hid->setBatteryLevel(_battery);
 
   if (!_server->start()) {
@@ -255,14 +268,9 @@ void BleMouse::tick() {
   }
 }
 
-bool BleMouse::sendConsumer(uint16_t /*code*/) {
-  // 媒体报告尚未启用（等鼠标描述符验证通过后再加 Report ID 2）
-  return false;
-}
-
-bool BleMouse::sendKeyboardModifiers(uint8_t /*mods*/) {
-  // 键盘报告尚未启用（等鼠标描述符验证通过后再加 Report ID 3）
-  return false;
+bool BleMouse::sendControl(uint8_t cmd) {
+  if (!_connected || _ctrl == nullptr) return false;
+  return _ctrl->notify(&cmd, 1);
 }
 
 void BleMouse::setBatteryLevel(uint8_t percent) {

@@ -46,12 +46,7 @@ bool          g_touchWasActive = false;
 uint32_t      g_touchReleaseMs = 0;   ///< 拇指离开屏幕的时刻
 AppMode       g_appMode = AppMode::Air;
 
-bool     g_holdLeft = false;
-bool     g_dragLock = false;   ///< 双击拖拽锁定 (drag lock)
-bool     g_voiceOn = false;    ///< 语音输入进行中 (Ctrl+Win 已按下)
-bool     g_voiceCancelled = false;  ///< 本次 A 按住期间语音已被取消
-uint32_t g_voiceTouchSince = 0;     ///< A 按住后拇指首次触屏的时刻
-bool     g_voiceAWasHeld = false;   ///< 上一帧 A 是否按住 (边沿检测)
+bool     g_voiceOn = false;    ///< 语音输入进行中 (A 按住)
 
 // 省电状态机: 无输入 5 分钟降亮 + IMU 降频; 30 分钟深度睡眠
 uint32_t g_lastActivityMs = 0;
@@ -295,11 +290,6 @@ void toggleMode() {
   }
   g_frozen = false;
   g_pendX = g_pendY = 0;
-  if (g_dragLock || g_holdLeft) {
-    g_dragLock = false;
-    g_holdLeft = false;
-    g_mouse.setButtons(0);
-  }
   M5.Power.setVibration(200);
   g_vibUntil = millis() + 120;
   g_lastFooter[0] = '\0';
@@ -332,9 +322,10 @@ void handleButtons() {
     }
     if (!chordFired && heldMs >= 600) {
       chordFired = true;
-      if (g_holdLeft) {
-        g_holdLeft = false;
-        g_mouse.setButtons(0);
+      // A 单独按下时语音可能已经触发, 组合键生效就取消它
+      if (g_voiceOn) {
+        g_mouse.sendControl(sw::kCtrlVoiceUp);
+        g_voiceOn = false;
       }
       toggleMode();
       g_suppressUntil = millis() + 300;
@@ -358,39 +349,22 @@ void handleButtons() {
   }
   if (millis() < g_suppressUntil) return;
 
-  // A
-  // mediaHold: A 按住 + 拇指在屏上 = 媒体模式, A 的左键语义让位
-  const bool mediaHold = M5.BtnA.isPressed() && g_touchActive;
-  if (mediaHold) {
-    // 媒体模式由 loop() 的手势分支处理
-  } else if (M5.BtnA.wasHold()) {
-    g_holdLeft = true;
-    g_mouse.setButtons(sw::kBtnLeft);
-  } else if (M5.BtnA.wasReleasedAfterHold()) {
-    g_holdLeft = false;
-    g_mouse.setButtons(0);
-  } else if (M5.BtnA.wasDoubleClicked()) {
-    if (g_dragLock) {
-      // 已处于拖拽锁定: 双击 = 释放
-      g_dragLock = false;
-      g_mouse.setButtons(0);
-      M5.Power.setVibration(200);
-      g_vibUntil = millis() + 150;
-    } else {
-      g_mouse.doubleClick(sw::kBtnLeft, 30, 45);
-      // Drag lock: 双击后进入拖拽锁定, 单击或移动结束? Mac 风格: 双击保持按下
-      g_dragLock = true;
-      g_mouse.setButtons(sw::kBtnLeft);  // 保持按下
-      M5.Power.setVibration(150);
-      g_vibUntil = millis() + 120;
+  // A: 按住 = 语音输入 (Ctrl+Win 按住), 松开即结束。
+  // 屏幕已能完成单击/双击, A 不再承担鼠标按键。
+  if (M5.BtnA.wasPressed()) {
+    g_voiceOn = g_mouse.sendControl(sw::kCtrlVoiceDown);
+    if (g_voiceOn) {
+      M5.Power.setVibration(255);
+      g_vibUntil = millis() + 200;   // 开始: 长震
+      Serial.println("[voice] down");
     }
-  } else if (M5.BtnA.wasSingleClicked()) {
-    if (g_dragLock) {
-      // 拖拽锁定中: 单击 = 释放
-      g_dragLock = false;
-      g_mouse.setButtons(0);
-    } else {
-      g_mouse.click(sw::kBtnLeft);
+  } else if (M5.BtnA.wasReleased()) {
+    if (g_voiceOn) {
+      g_mouse.sendControl(sw::kCtrlVoiceUp);
+      g_voiceOn = false;
+      M5.Power.setVibration(90);
+      g_vibUntil = millis() + 60;    // 结束: 短震
+      Serial.println("[voice] up");
     }
   }
 
@@ -500,12 +474,6 @@ void loop() {
 
   // ---- 触控板手势: 两种模式下都可用（滚动 + 快滑后退/前进）
   // 拇指按住屏幕期间暂停 IMU 指针，避免滚动的同时指针乱飞。
-  // A 键按住 + 拇指：时间窗区分语音与媒体
-  //   - 拇指触屏 0.5s 内不动  -> 语音开始 (Ctrl+Win 按住)
-  //   - 0.5s 内就滑动          -> 本次转媒体 (音量/播放)
-  //   - 语音进行中              -> 其它手势忽略
-  const bool aHeld = M5.BtnA.isPressed();
-  const bool mediaMode = aHeld && !g_voiceOn;
   sw::TouchOutput to;
   g_touchpad.update(nowMs, to);
   g_touchActive = g_touchpad.active();
@@ -526,61 +494,7 @@ void loop() {
     }
   }
 
-  // ---- 语音输入: A 按住 + 拇指按屏 0.5s 不动 = Ctrl+Win 按住
-  if (aHeld && !g_voiceAWasHeld) {
-    // A 刚按下: 复位时间窗
-    g_voiceCancelled = false;
-    g_voiceTouchSince = 0;
-  }
-  g_voiceAWasHeld = aHeld;
-  if (aHeld && g_touchActive && g_voiceTouchSince == 0) {
-    g_voiceTouchSince = nowMs;
-  }
-  if (!aHeld) {
-    g_voiceTouchSince = 0;
-    g_voiceCancelled = false;
-  }
-  const bool touchMoved = to.wheel != 0 || to.pan != 0 || to.leftClick;
-  if (aHeld && g_touchActive && !g_voiceOn && !g_voiceCancelled &&
-      g_voiceTouchSince != 0 &&
-      nowMs - g_voiceTouchSince >= 500 && !touchMoved) {
-    g_voiceOn = g_mouse.voiceStart();
-    if (g_voiceOn) {
-      M5.Power.setVibration(255);
-      g_vibUntil = nowMs + 200;   // 开始: 长震
-      Serial.println("[voice] Ctrl+Win down");
-    }
-  }
-  // 0.5s 内就动了 -> 本次取消语音 (标记到 A 松开为止)
-  if (aHeld && g_touchActive && !g_voiceOn && !g_voiceCancelled &&
-      g_voiceTouchSince != 0 && touchMoved) {
-    g_voiceCancelled = true;
-  }
-  // 语音结束: A 松开 / 拇指离开 / 被取消
-  if (g_voiceOn && (!aHeld || !g_touchActive)) {
-    g_mouse.voiceStop();
-    g_voiceOn = false;
-    M5.Power.setVibration(90);
-    g_vibUntil = nowMs + 60;        // 结束: 短震
-    Serial.println("[voice] modifiers up");
-  }
-
-  if (mediaMode && !g_voiceOn) {
-    // 媒体模式: 滚动转音量, 轻点转播放/暂停
-    if (to.wheel != 0) {
-      // 连续调节: 每 2 格一档, 音量键是增量式的
-      const int steps = (to.wheel > 0) ? to.wheel : -to.wheel;
-      for (int i = 0; i < steps; i += 2) {
-        g_mouse.sendConsumer(to.wheel > 0 ? 0x00E9 : 0x00EA);  // Vol+ / Vol-
-      }
-      ++g_sentCount;
-    }
-    if (to.leftClick) {
-      g_mouse.sendConsumer(0x00CD);  // Play/Pause
-      M5.Power.setVibration(150);
-      g_vibUntil = nowMs + 100;
-    }
-  } else {
+  {
     // 滚动 + 惯性
     if (to.wheel != 0 || to.pan != 0) {
       if (to.wheel != 0) {
